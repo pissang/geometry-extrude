@@ -4,13 +4,15 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="X-UA-Compatible" content="ie=edge">
-    <title>Polygon Offset Test</title>
+    <title>Simple Extrude Example</title>
 </head>
 <body>
     <style>
         html, body, #main {
             width: 100%;
             height: 100%;
+            margin: 0;
+            overflow: hidden;
         }
     </style>
     <canvas id="main"></canvas>
@@ -34,16 +36,20 @@
         ];
 
         clay.application.create('#main', {
+
+            autoRender: false,
+
             init(app) {
-                this._camera = app.createCamera([5, 5, 20], [0, 0, 0]);
+                this._camera = app.createCamera([5, 5, 20], [5, 5, 0]);
                 const result = polygonExtrude.extrude(polygons, {
                     depth: 2,
-                    bevelSize: 0,
-                    // bevelSize: 0.5,
-                    // bevelSegments: 2
+                    // bevelSize: 0,
+                    bevelSize: 0.5,
+                    bevelSegments: 2
                 });
 
                 app.createDirectionalLight([-1, -2, -1]);
+                app.createAmbientLight('#333');
 
                 console.log(result.indices, result.position);
 
@@ -55,12 +61,16 @@
 
                 const mesh = app.createMesh(geometry, {});
                 mesh.material.set('lineWidth', 1);
-                // mesh.culling = false;
+                mesh.culling = false;
 
                 this._control = new clay.plugin.OrbitControl({
                     target: this._camera,
                     domElement: app.container,
                     timeline: app.timeline
+                });
+
+                this._control.on('update', function () {
+                    app.render();
                 });
             },
 

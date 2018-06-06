@@ -110,33 +110,33 @@ function extrudePolygon({indices, vertices, holes, vertexOffset, indexOffset}, o
             const start = 1 - k;
             const end = bevelSegments - k;
             const z = (k === 0 ? (depth - bevelSize) : bevelSize);
-            for (let m = start; m <= end; m++) {
-                ringCount++;
+            for (let s = start; s <= end; s++) {
 
                 for (let i = 0; i < ringVertexCount; i++) {
-                    v1[0] = vertices[0] - topVertices[0];
-                    v1[1] = vertices[1] - topVertices[1];
+                    v1[0] = vertices[i * 2] - topVertices[i * 2];
+                    v1[1] = vertices[i * 2 + 1] - topVertices[i * 2 + 1];
                     v1[2] = 0;
                     normalize(v1, v1);
 
-                    k === 0 ? slerp(v, v0, v1, (m - start) / end)
-                        : slerp(v, v1, v2, (m - start) / end);
+                    const t = s / bevelSegments;
+                    k === 0 ? slerp(v, v0, v1, t)
+                        : slerp(v, v1, v2, t);
 
-                    v[0] = v[0] * bevelSize + topVertices[0];
-                    v[1] = v[1] * bevelSize + topVertices[1];
-                    v[2] = v[2] * bevelSize + z;
-
-                    out.position[vOff++] = v[0];
-                    out.position[vOff++] = v[1];
-                    out.position[vOff++] = v[2];
+                    out.position[vOff++] = v[0] * bevelSize + topVertices[i * 2];
+                    out.position[vOff++] = v[1] * bevelSize + topVertices[i * 2 + 1];
+                    out.position[vOff++] = v[2] * bevelSize + z;
 
                     for (var f = 0; f < 6; f++) {
                         const m = (quadToTriangle[f][0] + i) % ringVertexCount;
-                        const n = quadToTriangle[f][1] + ringCount - 1;
+                        const n = quadToTriangle[f][1] + ringCount;
                         out.indices[iOff++] = n * ringVertexCount + m + vertexOffset;
                     }
                 }
+
+                ringCount++;
             }
+
+            ringCount++;
         }
     }
     else {
@@ -148,13 +148,14 @@ function extrudePolygon({indices, vertices, holes, vertexOffset, indexOffset}, o
                 out.position[vOff++] = z;
             }
         }
-
-        for (let i = 0; i < ringVertexCount; i++) {
-            for (var f = 0; f < 6; f++) {
-                const m = (quadToTriangle[f][0] + i) % ringVertexCount;
-                const n = quadToTriangle[f][1];
-                out.indices[iOff++] = (n + 1) * ringVertexCount + m + vertexOffset;
-            }
+    }
+    // Connect the side
+    const sideStartRingN = bevelSize > 0 ? bevelSegments : 1;
+    for (let i = 0; i < ringVertexCount; i++) {
+        for (var f = 0; f < 6; f++) {
+            const m = (quadToTriangle[f][0] + i) % ringVertexCount;
+            const n = quadToTriangle[f][1] + sideStartRingN;
+            out.indices[iOff++] = n * ringVertexCount + m + vertexOffset;
         }
     }
 
