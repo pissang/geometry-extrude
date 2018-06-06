@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>Slerp Test</title>
+</head>
+<body>
+    <canvas id="main" width="400" height="400"></canvas>
+    <script type="module">
+        import { slerp, normalize } from '../src/math';
+        const ctx = document.getElementById('main').getContext('2d');
+
+        const center = [200, 200];
+        const r = 200;
+        const number = 10;
+
+        let startAngle = 0;
+        let endAngle = 2;
+        function redraw() {
+            const start = [Math.cos(startAngle), Math.sin(startAngle), 0];
+            const end = [Math.cos(endAngle), Math.sin(endAngle), 0];
+            ctx.clearRect(0, 0, 400, 400);
+            for (let i = 0; i < number; i++) {
+                const vec = slerp([], start, end, i / (number - 1));
+                ctx.beginPath();
+                ctx.moveTo(center[0], center[1]);
+                ctx.lineTo(center[0] + vec[0] * r, center[1] + vec[1] * r);
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            }
+        }
+
+        setInterval(function () {
+            redraw();
+            startAngle += 0.1;
+            endAngle += 0.15;
+        }, 50);
+    </script>
+</body>
+</html>

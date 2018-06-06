@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>Polygon Offset Test</title>
+</head>
+<body>
+    <style>
+        html, body, #main {
+            width: 100%;
+            height: 100%;
+        }
+    </style>
+    <canvas id="main"></canvas>
+    <script src="../dist/polygon-extrude.js"></script>
+    <script src="../../claygl/dist/claygl.js"></script>
+    <script>
+        const polygons = [
+            [
+                [
+                    [0, 0], [10, 0], [10, 10], [0, 10]
+                ].reverse()
+                // Hole
+                // [
+                //     [2, 2], [8, 2], [8, 8], [2, 8]
+                // ]
+            ],
+
+            // [[
+            //     [20, 20], [30, 20], [30, 30], [20, 30]
+            // ].reverse()]
+        ];
+
+        clay.application.create('#main', {
+            init(app) {
+                this._camera = app.createCamera([5, 5, 20], [0, 0, 0]);
+                const result = polygonExtrude.extrude(polygons, {
+                    depth: 2,
+                    bevelSize: 0,
+                    // bevelSize: 0.5,
+                    // bevelSegments: 2
+                });
+
+                app.createDirectionalLight([-1, -2, -1]);
+
+                console.log(result.indices, result.position);
+
+                const geometry = new clay.Geometry();
+                geometry.attributes.position.value = result.position;
+                geometry.indices = result.indices;
+                geometry.generateBarycentric();
+                geometry.generateFaceNormals();
+
+                const mesh = app.createMesh(geometry, {});
+                mesh.material.set('lineWidth', 1);
+                // mesh.culling = false;
+
+                this._control = new clay.plugin.OrbitControl({
+                    target: this._camera,
+                    domElement: app.container,
+                    timeline: app.timeline
+                });
+            },
+
+            loop() {}
+        });
+    </script>
+</body>
+</html>

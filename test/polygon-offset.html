@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>Polygon Offset Test</title>
+</head>
+<body>
+    <canvas id="main" width="800" height="600"></canvas>
+    <script src="../dist/polygon-extrude.js"></script>
+    <script>
+        const ctx = document.getElementById('main').getContext('2d');
+        function drawPolygon(points, color) {
+            ctx.beginPath();
+            ctx.moveTo(points[0], points[1]);
+            for (let i = 2; i < points.length;) {
+                const x = points[i++];
+                const y = points[i++];
+                ctx.lineTo(x, y);
+            }
+            ctx.lineWidth = 1;
+            ctx.closePath();
+            ctx.strokeStyle = color;
+            ctx.stroke();
+        }
+
+        const polygon = [
+            100, 100,
+            300, 100,
+            150, 150,
+            350, 180,
+            120, 200
+        ];
+
+        drawPolygon(polygon, '#f00');
+
+        drawPolygon(
+            polygonExtrude.offsetPolygonWithHole(polygon, null, 10), '#0f0'
+        );
+        drawPolygon(
+            polygonExtrude.offsetPolygonWithHole(polygon, null, -5), '#00f'
+        );
+    </script>
+</body>
+</html>
