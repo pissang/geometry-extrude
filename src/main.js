@@ -81,7 +81,7 @@ function addExtrudeSide(
     const splitBevel = opts.smoothBevel ? 1 : 2;
     const bevelSize = opts.bevelSize;
     const bevelSegments = opts.bevelSegments;
-    const vertexOffset = cursors.vertex / 3;
+    const vertexOffset = cursors.vertex;
     // Side vertices
     if (bevelSize > 0) {
 
@@ -108,9 +108,10 @@ function addExtrudeSide(
                         k === 0 ? slerp(v, v0, v1, t)
                             : slerp(v, v1, v2, t);
 
-                        out.position[cursors.vertex++] = v[0] * bevelSize + topVertices[idx];
-                        out.position[cursors.vertex++] = v[1] * bevelSize + topVertices[idx + 1];
-                        out.position[cursors.vertex++] = v[2] * bevelSize + z;
+                        out.position[cursors.vertex * 3] = v[0] * bevelSize + topVertices[idx];
+                        out.position[cursors.vertex * 3 + 1] = v[1] * bevelSize + topVertices[idx + 1];
+                        out.position[cursors.vertex * 3 + 2] = v[2] * bevelSize + z;
+                        cursors.vertex++;
                     }
 
                     if ((splitBevel > 1 && (s % splitBevel)) || (splitBevel === 1 && s >= 1)) {
@@ -132,9 +133,10 @@ function addExtrudeSide(
             for (let i = 0; i < ringVertexCount; i++) {
                 for (let m = 0; m < splitSide; m++) {
                     const idx = ((i + m) % ringVertexCount + start) * 2;
-                    out.position[cursors.vertex++] = vertices[idx];
-                    out.position[cursors.vertex++] = vertices[idx + 1];
-                    out.position[cursors.vertex++] = z;
+                    out.position[cursors.vertex * 3] = vertices[idx];
+                    out.position[cursors.vertex * 3 + 1] = vertices[idx + 1];
+                    out.position[cursors.vertex * 3 + 2] = z;
+                    cursors.vertex++;
                 }
             }
         }
@@ -154,19 +156,17 @@ function addExtrudeSide(
 // TODO Dimensions
 // TODO UV, separate top, normal
 // TODO If smooth connection between side and bevel.
-function extrudePolygon({indices, vertices, holes, vertexOffset, indexOffset}, opts, out) {
+// TODO anticlockwise
+// TODO Ignore bottom, bevel="top"|"bottom"
+function extrudePolygon({indices, vertices, topVertices, holes, vertexOffset, indexOffset}, opts, out) {
     const depth = opts.depth;
     if (vertices.length <= 2) {
         return;
     }
 
-    let topVertices = vertices;
-    if (opts.bevelSize > 0) {
-        topVertices = offsetPolygonWithHole(vertices, holes, opts.bevelSize);
-    }
     const topVertexCount = vertices.length / 2;
 
-    const cursors = {vertex: vertexOffset * 3, index: indexOffset};
+    const cursors = {vertex: vertexOffset, index: indexOffset};
     // Top indices
     const indicesLen = indices.length;
     for (let i = 0; i < indicesLen; i++) {
@@ -174,9 +174,10 @@ function extrudePolygon({indices, vertices, holes, vertexOffset, indexOffset}, o
     }
     // Top vertices
     for (let i = 0; i < topVertices.length; i += 2) {
-        out.position[cursors.vertex++] = topVertices[i];
-        out.position[cursors.vertex++] = topVertices[i + 1];
-        out.position[cursors.vertex++] = depth;
+        out.position[cursors.vertex * 3] = topVertices[i];
+        out.position[cursors.vertex * 3 + 1] = topVertices[i + 1];
+        out.position[cursors.vertex * 3 + 2] = depth;
+        cursors.vertex++;
     }
 
     let start = 0;
@@ -195,14 +196,15 @@ function extrudePolygon({indices, vertices, holes, vertexOffset, indexOffset}, o
     // Bottom indices
     for (let i = 0; i < indicesLen; i += 3) {
         for (let k = 0; k < 3; k++) {
-            out.indices[cursors.index++] = cursors.vertex / 3 + indices[i + 2 - k];
+            out.indices[cursors.index++] = cursors.vertex + indices[i + 2 - k];
         }
     }
     // Bottom vertices
     for (let i = 0; i < topVertices.length; i += 2) {
-        out.position[cursors.vertex++] = topVertices[i];
-        out.position[cursors.vertex++] = topVertices[i + 1];
-        out.position[cursors.vertex++] = 0;
+        out.position[cursors.vertex * 3] = topVertices[i];
+        out.position[cursors.vertex * 3 + 1] = topVertices[i + 1];
+        out.position[cursors.vertex * 3 + 2] = 0;
+        cursors.vertex++;
     }
 }
 
@@ -230,6 +232,7 @@ export function extrude(polygons, opts) {
     if (!(opts.bevelSize > 0)) {
         opts.bevelSegments = 0;
     }
+    opts.bevelSegments = Math.round(opts.bevelSegments);
 
     const preparedData = [];
     let indexCount = 0;
@@ -237,11 +240,16 @@ export function extrude(polygons, opts) {
     for (let p = 0; p < polygons.length; p++) {
         const polygon = polygons[p];
         const {vertices, holes, dimensions} = earcut.flatten(polygon);
-        const indices = triangulate(vertices, holes, dimensions);
+        let topVertices = vertices;
+        if (opts.bevelSize > 0) {
+            topVertices = offsetPolygonWithHole(vertices, holes, opts.bevelSize);
+        }
+        const indices = triangulate(topVertices, holes, dimensions);
         const polygonVertexCount = vertices.length / 2;
         preparedData.push({
             indices,
             vertices,
+            topVertices,
             holes,
             indexOffset: indexCount,
             vertexOffset: vertexCount
@@ -272,7 +280,8 @@ export function extrude(polygons, opts) {
 
     const data = {
         position: new Float32Array(vertexCount * 3),
-        indices: new (vertexCount > 0xffff ? Uint32Array : Uint16Array)(indexCount)
+        indices: new (vertexCount > 0xffff ? Uint32Array : Uint16Array)(indexCount),
+        uv: new Float32Array(vertexCount * 2)
     };
     for (let d = 0; d < preparedData.length; d++) {
         extrudePolygon(preparedData[d], opts, data);

@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>Simple Extrude Example</title>
+</head>
+<body>
+    <style>
+        html, body, #main {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            overflow: hidden;
+        }
+    </style>
+    <canvas id="main"></canvas>
+    <script src="../dist/polygon-extrude.js"></script>
+    <script src="./lib/dat.gui.js"></script>
+    <script src="./lib/claygl.js"></script>
+    <script>
+
+        const config = {
+            bevelSize: 0.2,
+            bevelSegments: 2,
+            n: 5
+        };
+
+        function buildStarPolygon() {
+
+            const starPolygon = [];
+
+            function addStar(r, reverse) {
+                const cx = 0;
+                const cy = 0;
+                const r0 = r / 2;
+                const n = config.n;
+                const dStep = Math.PI / n;
+                let deg = -Math.PI / 2;
+                const xStart = cx + r * Math.cos(deg);
+                const yStart = cy + r * Math.sin(deg);
+                deg += dStep;
+                const points = [[xStart, yStart]];
+
+                for (let i = 0, end = n * 2 - 1, ri; i < end; i++) {
+                    ri = i % 2 === 0 ? r0 : r;
+                    points.push([cx + ri * Math.cos(deg), cy + ri * Math.sin(deg)]);
+                    deg += dStep;
+                }
+
+                starPolygon.push(reverse ? points.reverse() : points);
+            }
+
+            addStar(10, true);
+            addStar(4, false);
+
+            console.log(starPolygon);
+
+            return starPolygon;
+        }
+
+        clay.application.create('#main', {
+
+            autoRender: false,
+
+            graphic: {
+                linear: true,
+                tonemapping: true,
+                shadow: true
+            },
+
+            init(app) {
+                this._camera = app.createCamera([0, 0, 20], [0, 0, 0]);
+
+                app.createDirectionalLight([-1, -2, -1], '#aaa');
+                app.scene.add(new clay.light.AmbientSH({
+                    intensity: 0.4,
+                    coefficients: [0.844, 0.712, 0.691, -0.037, 0.083, 0.167, 0.343, 0.288, 0.299, -0.041, -0.021, -0.009, -0.003, -0.041, -0.064, -0.011, -0.007, -0.004, -0.031, 0.034, 0.081, -0.060, -0.049, -0.060, 0.046, 0.056, 0.050]
+                }));
+
+                const geometry = new clay.Geometry({
+                    dynamic: true
+                });
+
+                function updateGeometry() {
+                    const result = polygonExtrude.extrude([buildStarPolygon()], {
+                        depth: 2,
+                        bevelSize: config.bevelSize,
+                        bevelSegments: config.bevelSegments
+                    });
+                    console.log(result.indices, result.position);
+                    geometry.attributes.position.value = result.position;
+                    geometry.indices = result.indices;
+                    geometry.generateVertexNormals();
+                    geometry.generateBarycentric();
+                    geometry.updateBoundingBox();
+                    geometry.dirty();
+                    app.render();
+                }
+
+                const mesh = app.createMesh(geometry, {});
+                mesh.material.set('lineWidth', 1);
+                mesh.culling = false;
+
+                this._control = new clay.plugin.OrbitControl({
+                    target: this._camera,
+                    domElement: app.container,
+                    timeline: app.timeline,
+                    rotateSensitivity: 2
+                });
+
+                this._control.on('update', function () {
+                    app.render();
+                });
+
+                const gui = new dat.GUI();
+                gui.add(config, 'bevelSize', 0, 1).onChange(updateGeometry);
+                gui.add(config, 'bevelSegments', 0, 10).step(1).onChange(updateGeometry);
+                gui.add(config, 'n', 3, 20).step(1).onChange(updateGeometry);
+
+                updateGeometry();
+            },
+
+            loop() {}
+        });
+    </script>
+</body>
+</html>
