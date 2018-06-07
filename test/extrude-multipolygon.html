@@ -25,14 +25,14 @@
                     [0, 0], [10, 0], [10, 10], [0, 10]
                 ].reverse(),
                 // Hole
-                [
-                    [2, 2], [8, 2], [8, 8], [2, 8]
-                ]
+                // [
+                //     [2, 2], [8, 2], [8, 8], [2, 8]
+                // ]
             ],
 
-            // [[
-            //     [20, 20], [30, 20], [30, 30], [20, 30]
-            // ].reverse()]
+            [[
+                [15, 0], [20, 0], [20, 10], [15, 10]
+            ].reverse()]
         ];
 
         clay.application.create('#main', {
@@ -53,8 +53,8 @@
                 const geometry = new clay.Geometry();
                 geometry.attributes.position.value = result.position;
                 geometry.indices = result.indices;
-                geometry.generateBarycentric();
                 geometry.generateVertexNormals();
+                geometry.generateBarycentric();
 
                 const mesh = app.createMesh(geometry, {});
                 mesh.material.set('lineWidth', 1);

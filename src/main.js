@@ -167,16 +167,16 @@ function extrudePolygon({indices, vertices, holes, vertexOffset, indexOffset}, o
     const topVertexCount = vertices.length / 2;
 
     const cursors = {vertex: vertexOffset * 3, index: indexOffset};
+    // Top indices
+    const indicesLen = indices.length;
+    for (let i = 0; i < indicesLen; i++) {
+        out.indices[cursors.index++] = vertexOffset + indices[i];
+    }
     // Top vertices
     for (let i = 0; i < topVertices.length; i += 2) {
         out.position[cursors.vertex++] = topVertices[i];
         out.position[cursors.vertex++] = topVertices[i + 1];
         out.position[cursors.vertex++] = depth;
-    }
-    // Top indices
-    const indicesLen = indices.length;
-    for (let i = 0; i < indicesLen; i++) {
-        out.indices[cursors.index++] = vertexOffset * 3 + indices[i];
     }
 
     let start = 0;
