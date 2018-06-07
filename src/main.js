@@ -52,7 +52,7 @@ export function offsetPolygonWithHole(vertices, holes, offset) {
     if (holes) {
         for (let i = 0; i < holes.length; i++) {
             const start = holes[i];
-            const end = i === holes.length - 1 ? vertices.length : holes[i + 1];
+            const end = holes[i + 1] || vertices.length / 2;
             offsetPolygon(vertices, offsetVertices, start, end, offset);
         }
     }
@@ -264,10 +264,9 @@ export function extrude(polygons, opts) {
             indexCount += (end - start) * 6 * (ringCount - 1);
 
             const sideRingVertexCount = (end - start) * (opts.smoothSide ? 1 : 2);
-            vertexCount += sideRingVertexCount * (
+            vertexCount += sideRingVertexCount * ringCount
                 // Double the bevel vertex number if not smooth
-                ringCount + (!opts.smoothBevel ? opts.bevelSegments * sideRingVertexCount * 2 : 0)
-            );
+                + (!opts.smoothBevel ? opts.bevelSegments * sideRingVertexCount * 2 : 0);
         }
     }
 
