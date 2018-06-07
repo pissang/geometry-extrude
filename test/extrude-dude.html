@@ -70,8 +70,8 @@
                 const geometry = new clay.Geometry();
                 geometry.attributes.position.value = result.position;
                 geometry.indices = result.indices;
+                geometry.generateVertexNormals();
                 geometry.generateBarycentric();
-                geometry.generateFaceNormals();
                 geometry.updateBoundingBox();
 
                 const center = geometry.boundingBox.min.clone();
@@ -80,8 +80,7 @@
                 this._camera = app.createCamera([center.x, center.y, center.z + 150], [center.x, center.y, 0]);
 
                 const mesh = app.createMesh(geometry, {});
-                // mesh.material.set('lineWidth', 1);
-                mesh.culling = false;
+                mesh.material.set('lineWidth', 1);
 
                 this._control = new clay.plugin.OrbitControl({
                     target: this._camera,

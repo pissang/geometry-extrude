@@ -59,8 +59,6 @@
 
                 const mesh = app.createMesh(geometry, {});
                 mesh.material.set('lineWidth', 1);
-                mesh.culling = false;
-
 
                 this._control = new clay.plugin.OrbitControl({
                     target: this._camera,

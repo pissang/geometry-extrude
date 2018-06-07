@@ -68,40 +68,20 @@ const quadToTriangle = [
     [0, 0], [1, 1], [0, 1]
 ];
 
-// TODO Hole, smooth bevel, UV, separate top
-// TODO If smooth connection between side and bevel.
-function extrudePolygon({indices, vertices, holes, vertexOffset, indexOffset}, opts, out) {
+// Add side vertices and indices. Include bevel.
+function addExtrudeSide(
+    out, vertices, topVertices, start, end,
+    cursors, opts
+) {
     const depth = opts.depth;
-    if (vertices.length <= 2) {
-        return;
-    }
-    const bevelSize = Math.min(!(opts.bevelSegments > 0) ? 0 : opts.bevelSize, opts.depth / 2);
-    const bevelSegments = opts.bevelSegments;
-
-    let topVertices = vertices;
-    if (bevelSize > 0) {
-        topVertices = offsetPolygonWithHole(vertices, holes, opts.bevelSize);
-    }
-
-    let vOff = vertexOffset * 3;
-    let iOff = indexOffset;
-    // Top vertices
-    for (let i = 0; i < topVertices.length; i += 2) {
-        out.position[vOff++] = topVertices[i];
-        out.position[vOff++] = topVertices[i + 1];
-        out.position[vOff++] = depth;
-    }
-    // Top indices
-    const indicesLen = indices.length;
-    for (let i = 0; i < indicesLen; i++) {
-        out.indices[iOff++] = vertexOffset * 3 + indices[i];
-    }
-
-    const ringVertexCount = vertices.length / 2;
+    const ringVertexCount = end - start;
     const splitSide = opts.smoothSide ? 1 : 2;
     const splitRingVertexCount = ringVertexCount * splitSide;
 
     const splitBevel = opts.smoothBevel ? 1 : 2;
+    const bevelSize = opts.bevelSize;
+    const bevelSegments = opts.bevelSegments;
+    const vertexOffset = cursors.vertex / 3;
     // Side vertices
     if (bevelSize > 0) {
 
@@ -117,7 +97,8 @@ function extrudePolygon({indices, vertices, holes, vertexOffset, indexOffset}, o
                 for (let i = 0; i < ringVertexCount; i++) {
 
                     for (let j = 0; j < splitSide; j++) {
-                        let idx = ((i + j) % ringVertexCount) * 2;
+                        // TODO Cache and optimize
+                        let idx = ((i + j) % ringVertexCount + start) * 2;
                         v1[0] = vertices[idx] - topVertices[idx];
                         v1[1] = vertices[idx + 1] - topVertices[idx + 1];
                         v1[2] = 0;
@@ -127,17 +108,16 @@ function extrudePolygon({indices, vertices, holes, vertexOffset, indexOffset}, o
                         k === 0 ? slerp(v, v0, v1, t)
                             : slerp(v, v1, v2, t);
 
-                        out.position[vOff++] = v[0] * bevelSize + topVertices[idx];
-                        out.position[vOff++] = v[1] * bevelSize + topVertices[idx + 1];
-                        out.position[vOff++] = v[2] * bevelSize + z;
+                        out.position[cursors.vertex++] = v[0] * bevelSize + topVertices[idx];
+                        out.position[cursors.vertex++] = v[1] * bevelSize + topVertices[idx + 1];
+                        out.position[cursors.vertex++] = v[2] * bevelSize + z;
                     }
 
                     if ((splitBevel > 1 && (s % splitBevel)) || (splitBevel === 1 && s >= 1)) {
                         for (var f = 0; f < 6; f++) {
                             const m = (quadToTriangle[f][0] + i * splitSide) % splitRingVertexCount;
                             const n = quadToTriangle[f][1] + ringCount;
-                            out.indices[iOff++] = (n - 1) * splitRingVertexCount + ringVertexCount
-                                 + m + vertexOffset;
+                            out.indices[cursors.index++] = (n - 1) * splitRingVertexCount + m + vertexOffset;
                         }
                     }
                 }
@@ -151,10 +131,10 @@ function extrudePolygon({indices, vertices, holes, vertexOffset, indexOffset}, o
             const z = k === 0 ? depth - bevelSize : bevelSize;
             for (let i = 0; i < ringVertexCount; i++) {
                 for (let m = 0; m < splitSide; m++) {
-                    const idx = ((i + m) % ringVertexCount) * 2;
-                    out.position[vOff++] = vertices[idx];
-                    out.position[vOff++] = vertices[idx + 1];
-                    out.position[vOff++] = z;
+                    const idx = ((i + m) % ringVertexCount + start) * 2;
+                    out.position[cursors.vertex++] = vertices[idx];
+                    out.position[cursors.vertex++] = vertices[idx + 1];
+                    out.position[cursors.vertex++] = z;
                 }
             }
         }
@@ -165,21 +145,64 @@ function extrudePolygon({indices, vertices, holes, vertexOffset, indexOffset}, o
         for (var f = 0; f < 6; f++) {
             const m = (quadToTriangle[f][0] + i * splitSide) % splitRingVertexCount;
             const n = quadToTriangle[f][1] + sideStartRingN;
-            out.indices[iOff++] = (n - 1) * splitRingVertexCount + ringVertexCount + m + vertexOffset;
+            out.indices[cursors.index++] = (n - 1) * splitRingVertexCount + m + vertexOffset;
+        }
+    }
+
+}
+
+// TODO Dimensions
+// TODO UV, separate top, normal
+// TODO If smooth connection between side and bevel.
+function extrudePolygon({indices, vertices, holes, vertexOffset, indexOffset}, opts, out) {
+    const depth = opts.depth;
+    if (vertices.length <= 2) {
+        return;
+    }
+
+    let topVertices = vertices;
+    if (opts.bevelSize > 0) {
+        topVertices = offsetPolygonWithHole(vertices, holes, opts.bevelSize);
+    }
+    const topVertexCount = vertices.length / 2;
+
+    const cursors = {vertex: vertexOffset * 3, index: indexOffset};
+    // Top vertices
+    for (let i = 0; i < topVertices.length; i += 2) {
+        out.position[cursors.vertex++] = topVertices[i];
+        out.position[cursors.vertex++] = topVertices[i + 1];
+        out.position[cursors.vertex++] = depth;
+    }
+    // Top indices
+    const indicesLen = indices.length;
+    for (let i = 0; i < indicesLen; i++) {
+        out.indices[cursors.index++] = vertexOffset * 3 + indices[i];
+    }
+
+    let start = 0;
+    let end = (holes && holes.length) ? holes[0] : topVertexCount;
+    // Add exterior
+    addExtrudeSide(out, vertices, topVertices, start, end, cursors, opts);
+    // Add holes
+    if (holes) {
+        for (let h = 0; h < holes.length; h++) {
+            start = holes[h];
+            end = holes[h + 1] || topVertexCount;
+            addExtrudeSide(out, vertices, topVertices, start, end, cursors, opts);
         }
     }
 
     // Bottom indices
     for (let i = 0; i < indicesLen; i += 3) {
         for (let k = 0; k < 3; k++) {
-            out.indices[iOff++] = vOff / 3 + indices[i + 2 - k];
+            out.indices[cursors.index++] = cursors.vertex / 3 + indices[i + 2 - k];
         }
     }
     // Bottom vertices
     for (let i = 0; i < topVertices.length; i += 2) {
-        out.position[vOff++] = topVertices[i];
-        out.position[vOff++] = topVertices[i + 1];
-        out.position[vOff++] = 0;
+        out.position[cursors.vertex++] = topVertices[i];
+        out.position[cursors.vertex++] = topVertices[i + 1];
+        out.position[cursors.vertex++] = 0;
     }
 }
 
@@ -202,7 +225,11 @@ export function extrude(polygons, opts) {
     opts.smoothSide = opts.smoothSide || false;
     opts.smoothBevel = opts.smoothBevel || false;
 
-    const hasBevel = opts.bevelSize > 0 && opts.bevelSegments > 0;
+    // Normalize bevel options.
+    opts.bevelSize = Math.min(!(opts.bevelSegments > 0) ? 0 : opts.bevelSize, opts.depth / 2);
+    if (!(opts.bevelSize > 0)) {
+        opts.bevelSegments = 0;
+    }
 
     const preparedData = [];
     let indexCount = 0;
@@ -219,16 +246,29 @@ export function extrude(polygons, opts) {
             indexOffset: indexCount,
             vertexOffset: vertexCount
         });
-        const ringCount = 2 + (hasBevel ? opts.bevelSegments * 2 : 0);
-        indexCount += indices.length * 2
-            + polygonVertexCount * 6 * (ringCount - 1);
+        indexCount += indices.length * 2;
+        vertexCount += polygonVertexCount * 2;
+        const ringCount = 2 + opts.bevelSegments * 2;
 
-        const sideRingVertexCount = polygonVertexCount * (opts.smoothSide ? 1 : 2);
-        vertexCount += polygonVertexCount * 2
-            + sideRingVertexCount * (
+        let start = 0;
+        let end = 0;
+        for (let h = 0; h < (holes ? holes.length : 0) + 1; h++) {
+            if (h === 0) {
+                end = holes && holes.length ? holes[0] : polygonVertexCount;
+            }
+            else {
+                start = holes[h - 1];
+                end = holes[h] || polygonVertexCount;
+            }
+
+            indexCount += (end - start) * 6 * (ringCount - 1);
+
+            const sideRingVertexCount = (end - start) * (opts.smoothSide ? 1 : 2);
+            vertexCount += sideRingVertexCount * (
                 // Double the bevel vertex number if not smooth
-                ringCount + ((!opts.smoothBevel && hasBevel) ? opts.bevelSegments * sideRingVertexCount * 2 : 0)
+                ringCount + (!opts.smoothBevel ? opts.bevelSegments * sideRingVertexCount * 2 : 0)
             );
+        }
     }
 
     const data = {

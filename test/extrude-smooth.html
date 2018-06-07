@@ -82,7 +82,6 @@ void main() {
                 const mesh = app.createMesh(geometry, {
                     shader: new clay.Shader(normalVs, normalFs)
                 });
-                mesh.culling = false;
 
                 this._control = new clay.plugin.OrbitControl({
                     target: this._camera,
