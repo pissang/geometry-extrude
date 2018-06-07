@@ -31,16 +31,24 @@
 
             autoRender: false,
 
+            graphic: {
+                linear: true,
+                tonemapping: true
+            },
+
             init(app) {
                 this._camera = app.createCamera([5, 5, 20], [5, 5, 0]);
                 const result = polygonExtrude.extrude(polygons, {
-                    depth: 2
-                    // bevelSize: 0
+                    depth: 2,
+                    bevelSize: 0.5
+                    // smoothBevel: true
                 });
 
-                app.createDirectionalLight([-1, -2, -1]);
-                app.createAmbientLight('#333');
-
+                app.createDirectionalLight([-1, -2, -1], '#aaa');
+                // app.scene.add(new clay.light.AmbientSH({
+                //     intensity: 0.4,
+                //     coefficients: [0.844, 0.712, 0.691, -0.037, 0.083, 0.167, 0.343, 0.288, 0.299, -0.041, -0.021, -0.009, -0.003, -0.041, -0.064, -0.011, -0.007, -0.004, -0.031, 0.034, 0.081, -0.060, -0.049, -0.060, 0.046, 0.056, 0.050]
+                // }));
                 console.log(result.indices, result.position);
 
                 const geometry = new clay.Geometry();
@@ -52,6 +60,7 @@
                 const mesh = app.createMesh(geometry, {});
                 mesh.material.set('lineWidth', 1);
                 mesh.culling = false;
+
 
                 this._control = new clay.plugin.OrbitControl({
                     target: this._camera,

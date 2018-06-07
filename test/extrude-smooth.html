@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>Smooth Example</title>
+</head>
+<body>
+    <style>
+        html, body, #main {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            overflow: hidden;
+        }
+    </style>
+    <canvas id="main"></canvas>
+    <script src="../dist/polygon-extrude.js"></script>
+    <script src="./lib/dat.gui.js"></script>
+    <script src="./lib/claygl.js"></script>
+    <script>
+        const normalVs = `
+uniform mat4 worldViewProjection : WORLDVIEWPROJECTION;
+attribute vec3 position: POSITION;
+attribute vec3 normal: NORMAL;
+
+varying vec3 v_Normal;
+
+void main() {
+    gl_Position = worldViewProjection * vec4(position, 1.0);
+    v_Normal = normal;
+}
+        `;
+        const normalFs = `
+varying vec3 v_Normal;
+void main() {
+    gl_FragColor = vec4(v_Normal, 1.0);
+}
+        `;
+        const polygons = [
+            [
+                [
+                    [0, 0], [10, 0], [10, 10], [0, 10]
+                ].reverse()
+            ]
+        ];
+
+        clay.application.create('#main', {
+
+            autoRender: false,
+
+            graphic: {
+                linear: true,
+                tonemapping: true
+            },
+
+            init(app) {
+                this._camera = app.createCamera([5, 5, 20], [5, 5, 0]);
+
+                const geometry = new clay.Geometry();
+                const config = {
+                    smoothSide: false,
+                    smoothBevel: false
+                };
+
+                function updateGeometry() {
+                    const result = polygonExtrude.extrude(polygons, {
+                        depth: 2,
+                        bevelSize: 0.7,
+                        smoothBevel: config.smoothBevel,
+                        smoothSide: config.smoothSide
+                    });
+                    geometry.attributes.position.value = result.position;
+                    geometry.indices = result.indices;
+                    geometry.generateVertexNormals();
+                    geometry.dirty();
+
+                    app.render();
+                }
+
+                const mesh = app.createMesh(geometry, {
+                    shader: new clay.Shader(normalVs, normalFs)
+                });
+                mesh.culling = false;
+
+                this._control = new clay.plugin.OrbitControl({
+                    target: this._camera,
+                    domElement: app.container,
+                    timeline: app.timeline
+                });
+
+                this._control.on('update', function () {
+                    app.render();
+                });
+
+                updateGeometry();
+
+                const gui = new dat.GUI();
+                gui.add(config, 'smoothBevel').onChange(updateGeometry);
+                gui.add(config, 'smoothSide').onChange(updateGeometry);
+            },
+
+            loop() {}
+        });
+    </script>
+</body>
+</html>
