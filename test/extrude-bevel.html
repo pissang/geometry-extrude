@@ -16,14 +16,18 @@
         }
     </style>
     <canvas id="main"></canvas>
-    <script src="../dist/polygon-extrude.js"></script>
+    <script src="../dist/geometry-extrude.js"></script>
+    <script src="./lib/dat.gui.js"></script>
     <script src="./lib/claygl.js"></script>
     <script>
         const polygons = [
             [
                 [
                     [0, 0], [10, 0], [10, 10], [0, 10]
-                ].reverse()
+                ].reverse(),
+                [
+                    [2, 2], [8, 2], [8, 8], [2, 8]
+                ]
             ]
         ];
 
@@ -33,29 +37,43 @@
 
             graphic: {
                 linear: true,
-                tonemapping: true
+                tonemapping: true,
+                shadow: true
             },
 
             init(app) {
                 this._camera = app.createCamera([5, 5, 20], [5, 5, 0]);
-                const result = polygonExtrude.extrude(polygons, {
-                    depth: 2,
-                    bevelSize: 0.5
-                    // smoothBevel: true
-                });
 
                 app.createDirectionalLight([-1, -2, -1], '#aaa');
-                // app.scene.add(new clay.light.AmbientSH({
-                //     intensity: 0.4,
-                //     coefficients: [0.844, 0.712, 0.691, -0.037, 0.083, 0.167, 0.343, 0.288, 0.299, -0.041, -0.021, -0.009, -0.003, -0.041, -0.064, -0.011, -0.007, -0.004, -0.031, 0.034, 0.081, -0.060, -0.049, -0.060, 0.046, 0.056, 0.050]
-                // }));
-                console.log(result.indices, result.position);
+                app.scene.add(new clay.light.AmbientSH({
+                    intensity: 0.4,
+                    coefficients: [0.844, 0.712, 0.691, -0.037, 0.083, 0.167, 0.343, 0.288, 0.299, -0.041, -0.021, -0.009, -0.003, -0.041, -0.064, -0.011, -0.007, -0.004, -0.031, 0.034, 0.081, -0.060, -0.049, -0.060, 0.046, 0.056, 0.050]
+                }));
 
-                const geometry = new clay.Geometry();
-                geometry.attributes.position.value = result.position;
-                geometry.indices = result.indices;
-                geometry.generateVertexNormals();
-                geometry.generateBarycentric();
+                const config = {
+                    bevelSize: 0.5,
+                    bevelSegments: 2
+                };
+
+                const geometry = new clay.Geometry({
+                    dynamic: true
+                });
+
+                function updateGeometry() {
+                    const result = geometryExtrude.extrudePolygon(polygons, {
+                        depth: 2,
+                        bevelSize: config.bevelSize,
+                        bevelSegments: config.bevelSegments
+                    });
+                    console.log(result.indices, result.position);
+                    geometry.attributes.position.value = result.position;
+                    geometry.indices = result.indices;
+                    geometry.generateVertexNormals();
+                    geometry.generateBarycentric();
+                    geometry.updateBoundingBox();
+                    geometry.dirty();
+                    app.render();
+                }
 
                 const mesh = app.createMesh(geometry, {});
                 mesh.material.set('lineWidth', 1);
@@ -63,12 +81,19 @@
                 this._control = new clay.plugin.OrbitControl({
                     target: this._camera,
                     domElement: app.container,
-                    timeline: app.timeline
+                    timeline: app.timeline,
+                    rotateSensitivity: 2
                 });
 
                 this._control.on('update', function () {
                     app.render();
                 });
+
+                const gui = new dat.GUI();
+                gui.add(config, 'bevelSize', 0, 1).onChange(updateGeometry);
+                gui.add(config, 'bevelSegments', 0, 10).step(1).onChange(updateGeometry);
+
+                updateGeometry();
             },
 
             loop() {}

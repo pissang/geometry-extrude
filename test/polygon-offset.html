@@ -8,7 +8,7 @@
 </head>
 <body>
     <canvas id="main" width="800" height="600"></canvas>
-    <script src="../dist/polygon-extrude.js"></script>
+    <script src="../dist/geometry-extrude.js"></script>
     <script>
         const ctx = document.getElementById('main').getContext('2d');
         function drawPolygon(points, color) {
@@ -36,10 +36,10 @@
         drawPolygon(polygon, '#f00');
 
         drawPolygon(
-            polygonExtrude.offsetPolygonWithHole(polygon, null, 10), '#0f0'
+            geometryExtrude.offsetPolygonWithHole(polygon, null, 10), '#0f0'
         );
         drawPolygon(
-            polygonExtrude.offsetPolygonWithHole(polygon, null, -5), '#00f'
+            geometryExtrude.offsetPolygonWithHole(polygon, null, -5), '#00f'
         );
     </script>
 </body>

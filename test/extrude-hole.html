@@ -16,7 +16,7 @@
         }
     </style>
     <canvas id="main"></canvas>
-    <script src="../dist/polygon-extrude.js"></script>
+    <script src="../dist/geometry-extrude.js"></script>
     <script src="./lib/claygl.js"></script>
     <script>
         const polygons = [
@@ -41,7 +41,7 @@
 
             init(app) {
                 this._camera = app.createCamera([5, 5, 20], [5, 5, 0]);
-                const result = polygonExtrude.extrude(polygons, {
+                const result = geometryExtrude.extrudePolygon(polygons, {
                     depth: 2
                 });
 
@@ -62,7 +62,8 @@
                 this._control = new clay.plugin.OrbitControl({
                     target: this._camera,
                     domElement: app.container,
-                    timeline: app.timeline
+                    timeline: app.timeline,
+                    rotateSensitivity: 2
                 });
 
                 this._control.on('update', function () {

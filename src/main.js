@@ -150,23 +150,15 @@ function addExtrudeSide(
             out.indices[cursors.index++] = (n - 1) * splitRingVertexCount + m + vertexOffset;
         }
     }
-
 }
 
-// TODO Dimensions
-// TODO UV, separate top, normal
-// TODO If smooth connection between side and bevel.
-// TODO anticlockwise
-// TODO Ignore bottom, bevel="top"|"bottom"
-function extrudePolygon({indices, vertices, topVertices, holes, vertexOffset, indexOffset}, opts, out) {
+function addTopAndBottom({indices, vertices, topVertices}, out, cursors, opts) {
     const depth = opts.depth;
     if (vertices.length <= 2) {
         return;
     }
 
-    const topVertexCount = vertices.length / 2;
-
-    const cursors = {vertex: vertexOffset, index: indexOffset};
+    const vertexOffset = cursors.vertex;
     // Top indices
     const indicesLen = indices.length;
     for (let i = 0; i < indicesLen; i++) {
@@ -178,19 +170,6 @@ function extrudePolygon({indices, vertices, topVertices, holes, vertexOffset, in
         out.position[cursors.vertex * 3 + 1] = topVertices[i + 1];
         out.position[cursors.vertex * 3 + 2] = depth;
         cursors.vertex++;
-    }
-
-    let start = 0;
-    let end = (holes && holes.length) ? holes[0] : topVertexCount;
-    // Add exterior
-    addExtrudeSide(out, vertices, topVertices, start, end, cursors, opts);
-    // Add holes
-    if (holes) {
-        for (let h = 0; h < holes.length; h++) {
-            start = holes[h];
-            end = holes[h + 1] || topVertexCount;
-            addExtrudeSide(out, vertices, topVertices, start, end, cursors, opts);
-        }
     }
 
     // Bottom indices
@@ -208,19 +187,8 @@ function extrudePolygon({indices, vertices, topVertices, holes, vertexOffset, in
     }
 }
 
-/**
- *
- * @param {Array} polygons Polygons array that match GeoJSON MultiPolygon geometry.
- * @param {Object} [opts]
- * @param {number} [opts.height]
- * @param {number} [opts.bevelSize = 0]
- * @param {number} [opts.bevelSegments = 2]
- * @param {boolean} [opts.smoothSide = false]
- * @param {boolean} [opts.smoothBevel = false]
- */
-export function extrude(polygons, opts) {
+function normalizeOpts(opts) {
 
-    opts = opts || {};
     opts.depth = opts.depth || 1;
     opts.bevelSize = opts.bevelSize || 0;
     opts.bevelSegments = opts.bevelSegments == null ? 2 : opts.bevelSegments;
@@ -233,6 +201,27 @@ export function extrude(polygons, opts) {
         opts.bevelSegments = 0;
     }
     opts.bevelSegments = Math.round(opts.bevelSegments);
+}
+/**
+ *
+ * @param {Array} polygons Polygons array that match GeoJSON MultiPolygon geometry.
+ * @param {Object} [opts]
+ * @param {number} [opts.depth]
+ * @param {number} [opts.bevelSize = 0]
+ * @param {number} [opts.bevelSegments = 2]
+ * @param {boolean} [opts.smoothSide = false]
+ * @param {boolean} [opts.smoothBevel = false]
+ */
+
+// TODO Dimensions
+// TODO UV, normal
+// TODO If smooth connection between side and bevel.
+// TODO anticlockwise
+// TODO Ignore bottom, bevel="top"|"bottom"
+export function extrudePolygon(polygons, opts) {
+
+    opts = opts || {};
+    normalizeOpts(opts);
 
     const preparedData = [];
     let indexCount = 0;
@@ -250,9 +239,7 @@ export function extrude(polygons, opts) {
             indices,
             vertices,
             topVertices,
-            holes,
-            indexOffset: indexCount,
-            vertexOffset: vertexCount
+            holes
         });
         indexCount += indices.length * 2;
         vertexCount += polygonVertexCount * 2;
@@ -283,9 +270,52 @@ export function extrude(polygons, opts) {
         indices: new (vertexCount > 0xffff ? Uint32Array : Uint16Array)(indexCount),
         uv: new Float32Array(vertexCount * 2)
     };
+
+    const cursors = {
+        vertex: 0, index: 0
+    };
+
     for (let d = 0; d < preparedData.length; d++) {
-        extrudePolygon(preparedData[d], opts, data);
+        addTopAndBottom(preparedData[d], data, cursors, opts);
+    }
+
+    for (let d = 0; d < preparedData.length; d++) {
+        const {holes, vertices, topVertices} = preparedData[d];
+        const topVertexCount = vertices.length / 2;
+
+        let start = 0;
+        let end = (holes && holes.length) ? holes[0] : topVertexCount;
+        // Add exterior
+        addExtrudeSide(data, vertices, topVertices, start, end, cursors, opts);
+        // Add holes
+        if (holes) {
+            for (let h = 0; h < holes.length; h++) {
+                start = holes[h];
+                end = holes[h + 1] || topVertexCount;
+                addExtrudeSide(data, vertices, topVertices, start, end, cursors, opts);
+            }
+        }
+
     }
 
     return data;
 };
+
+/**
+ *
+ * @param {Array} polylines Polylines array that match GeoJSON MultiLineString geometry.
+ * @param {Object} [opts]
+ * @param {number} [opts.depth]
+ * @param {number} [opts.bevelSize = 0]
+ * @param {number} [opts.bevelSegments = 2]
+ * @param {boolean} [opts.smoothSide = false]
+ * @param {boolean} [opts.smoothBevel = false]
+ * @param {boolean} [opts.lineWidth = 1]
+ */
+export function extrudePolyline(polylines, opts) {
+    normalizeOpts(opts);
+    if (opts.lineWidth == null) {
+        opts.lineWidth = 1;
+    }
+    // Extrude polyline to polygon
+}

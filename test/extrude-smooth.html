@@ -16,7 +16,7 @@
         }
     </style>
     <canvas id="main"></canvas>
-    <script src="../dist/polygon-extrude.js"></script>
+    <script src="../dist/geometry-extrude.js"></script>
     <script src="./lib/dat.gui.js"></script>
     <script src="./lib/claygl.js"></script>
     <script>
@@ -58,14 +58,16 @@ void main() {
             init(app) {
                 this._camera = app.createCamera([5, 5, 20], [5, 5, 0]);
 
-                const geometry = new clay.Geometry();
+                const geometry = new clay.Geometry({
+                    dynamic: true
+                });
                 const config = {
                     smoothSide: false,
                     smoothBevel: false
                 };
 
                 function updateGeometry() {
-                    const result = polygonExtrude.extrude(polygons, {
+                    const result = geometryExtrude.extrudePolygon(polygons, {
                         depth: 2,
                         bevelSize: 0.7,
                         smoothBevel: config.smoothBevel,

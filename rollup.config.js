@@ -11,8 +11,8 @@ export default {
     output: [
         {
             format: 'umd',
-            name: 'polygonExtrude',
-            file: 'dist/polygon-extrude.js'
+            name: 'geometryExtrude',
+            file: 'dist/geometry-extrude.js'
         }
     ]
 };

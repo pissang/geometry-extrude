@@ -1,11 +1,11 @@
 {
-  "name": "polygon-extrude",
+  "name": "geometry-extrude",
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
   "scripts": {
     "dev": "rollup -c -w",
-    "build": "rollup -c && uglifyjs -c -m -- dist/polygon-extrude.js > dist/polygon-extrude.min.js"
+    "build": "rollup -c && uglifyjs -c -m -- dist/geometry-extrude.js > dist/geometry-extrude.min.js"
   },
   "author": "",
   "license": "MIT",
