@@ -1,5 +1,5 @@
 import earcut from 'earcut';
-import {slerp, scale, normalize, lineIntersection} from './math';
+import {slerp, scale, normalize, lineIntersection, area} from './math';
 
 export function triangulate(vertices, holes, dimensions=2) {
     return earcut(vertices, holes, dimensions);
@@ -60,6 +60,19 @@ export function offsetPolygonWithHole(vertices, holes, offset) {
     return offsetVertices;
 }
 
+function reversePoints(points, stride, start, end) {
+    for (let i = 0; i < Math.floor((end - start) / 2); i++) {
+        for (let j = 0; j < stride; j++) {
+            const a = (i + start) * stride + j;
+            const b = (end - i - 1) * stride + j;
+            const tmp = points[a];
+            points[a] = points[b];
+            points[b] = tmp;
+        }
+    }
+
+    return points;
+}
 
 // 0,0----1,0
 // 0,1----1,1
@@ -115,7 +128,7 @@ function addExtrudeSide(
                     }
 
                     if ((splitBevel > 1 && (s % splitBevel)) || (splitBevel === 1 && s >= 1)) {
-                        for (var f = 0; f < 6; f++) {
+                        for (let f = 0; f < 6; f++) {
                             const m = (quadToTriangle[f][0] + i * splitSide) % splitRingVertexCount;
                             const n = quadToTriangle[f][1] + ringCount;
                             out.indices[cursors.index++] = (n - 1) * splitRingVertexCount + m + vertexOffset;
@@ -144,7 +157,7 @@ function addExtrudeSide(
     // Connect the side
     const sideStartRingN = bevelSize > 0 ? (bevelSegments * splitBevel + 1) : 1;
     for (let i = 0; i < ringVertexCount; i++) {
-        for (var f = 0; f < 6; f++) {
+        for (let f = 0; f < 6; f++) {
             const m = (quadToTriangle[f][0] + i * splitSide) % splitRingVertexCount;
             const n = quadToTriangle[f][1] + sideStartRingN;
             out.indices[cursors.index++] = (n - 1) * splitRingVertexCount + m + vertexOffset;
@@ -202,33 +215,36 @@ function normalizeOpts(opts) {
     }
     opts.bevelSegments = Math.round(opts.bevelSegments);
 }
-/**
- *
- * @param {Array} polygons Polygons array that match GeoJSON MultiPolygon geometry.
- * @param {Object} [opts]
- * @param {number} [opts.depth]
- * @param {number} [opts.bevelSize = 0]
- * @param {number} [opts.bevelSegments = 2]
- * @param {boolean} [opts.smoothSide = false]
- * @param {boolean} [opts.smoothBevel = false]
- */
 
-// TODO Dimensions
-// TODO UV, normal
-// TODO If smooth connection between side and bevel.
-// TODO anticlockwise
-// TODO Ignore bottom, bevel="top"|"bottom"
-export function extrudePolygon(polygons, opts) {
+function convertToAnticlockwise(vertices, holes) {
+    let polygonVertexCount = vertices.length / 2;
+    let start = 0;
+    let end = holes && holes.length ? holes[0] : polygonVertexCount;
+    if (area(vertices, start, end) > 0) {
+        reversePoints(vertices, 2, start, end);
+    }
+    for (let h = 1; h < (holes ? holes.length : 0) + 1; h++) {
+        start = holes[h - 1];
+        end = holes[h] || polygonVertexCount;
+        if (area(vertices, start, end) < 0) {
+            reversePoints(vertices, 2, start, end);
+        }
+    }
+}
 
-    opts = opts || {};
-    normalizeOpts(opts);
 
+function extrudeFlattenPolygon(flaternPolygons, opts) {
     const preparedData = [];
     let indexCount = 0;
     let vertexCount = 0;
-    for (let p = 0; p < polygons.length; p++) {
-        const polygon = polygons[p];
-        const {vertices, holes, dimensions} = earcut.flatten(polygon);
+    for (let p = 0; p < flaternPolygons.length; p++) {
+        const {vertices, holes, dimensions} = flaternPolygons[p];
+
+        convertToAnticlockwise(vertices, holes);
+
+        if (dimensions !== 2) {
+            throw new Error('Only 2D polygon points are supported');
+        }
         let topVertices = vertices;
         if (opts.bevelSize > 0) {
             topVertices = offsetPolygonWithHole(vertices, holes, opts.bevelSize);
@@ -299,7 +315,56 @@ export function extrudePolygon(polygons, opts) {
     }
 
     return data;
+}
+/**
+ *
+ * @param {Array} polygons Polygons array that match GeoJSON MultiPolygon geometry.
+ * @param {Object} [opts]
+ * @param {number} [opts.depth]
+ * @param {number} [opts.bevelSize = 0]
+ * @param {number} [opts.bevelSegments = 2]
+ * @param {boolean} [opts.smoothSide = false]
+ * @param {boolean} [opts.smoothBevel = false]
+ */
+// TODO Dimensions
+// TODO UV, normal
+// TODO If smooth connection between side and bevel.
+// TODO anticlockwise
+// TODO Ignore bottom, bevel="top"|"bottom"
+export function extrudePolygon(polygons, opts) {
+
+    opts = opts || {};
+    normalizeOpts(opts);
+
+    const flattenPolygons = [];
+    for (let i = 0; i < polygons.length; i++) {
+        flattenPolygons.push(earcut.flatten(polygons[i]));
+    }
+    return extrudeFlattenPolygon(flattenPolygons, opts);
 };
+
+function convertPolylineToFlattenPolygon(polyline, lineWidth) {
+    const pointCount = polyline.length;
+    const points = new Float32Array(pointCount * 2);
+    for (let i = 0, k = 0; i < pointCount; i++) {
+        points[k++] = polyline[i][0];
+        points[k++] = polyline[i][1];
+    }
+
+    const polygon = new Float32Array(points.length * 2);
+    offsetPolygon(points, polygon, 0, pointCount, lineWidth / 2);
+    for (let i = 0; i < pointCount; i++) {
+        polygon[(pointCount * 2 - i - 1) * 2] = polygon[i * 2];
+        polygon[(pointCount * 2 - i - 1) * 2 + 1] = polygon[i * 2 + 1];
+    }
+    offsetPolygon(points, polygon, 0, pointCount, -lineWidth / 2);
+
+    return {
+        vertices: polygon,
+        holes: [],
+        dimensions: 2
+    };
+}
 
 /**
  *
@@ -317,5 +382,11 @@ export function extrudePolyline(polylines, opts) {
     if (opts.lineWidth == null) {
         opts.lineWidth = 1;
     }
+    const polygons = [];
     // Extrude polyline to polygon
+    for (let i = 0; i < polylines.length; i++) {
+        polygons.push(convertPolylineToFlattenPolygon(polylines[i], opts.lineWidth));
+    }
+
+    return extrudeFlattenPolygon(polygons, opts);
 }

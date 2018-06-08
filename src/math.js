@@ -81,3 +81,23 @@ export function lineIntersection(x1, y1, x2, y2, x3, y3, x4, y4, out, writeOffse
 
     return t1;
 }
+
+export function area(points, start, end) {
+    // Signed polygon area
+    const n = end - start;
+    if (n < 3) {
+        return 0;
+    }
+    let area = 0;
+    for (let i = (end - 1) * 2, j = start; j < n * 2;) {
+        const x0 = points[i];
+        const y0 = points[i + 1];
+        const x1 = points[j];
+        const y1 = points[j + 1];
+        i = j;
+        j += 2;
+        area += x0 * y1 - x1 * y0;
+    }
+
+    return area;
+}

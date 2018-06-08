@@ -27,9 +27,9 @@
             n: 5
         };
 
-        function buildStarPolygon() {
+        function buildStarPolylines() {
 
-            const starPolygon = [];
+            const starPolyline = [];
 
             function addStar(r, reverse) {
                 const cx = 0;
@@ -43,21 +43,20 @@
                 deg += dStep;
                 const points = [[xStart, yStart]];
 
-                for (let i = 0, end = n * 2 - 1, ri; i < end; i++) {
+                for (let i = 0, end = n * 2 - 1, ri; i <= end; i++) {
                     ri = i % 2 === 0 ? r0 : r;
                     points.push([cx + ri * Math.cos(deg), cy + ri * Math.sin(deg)]);
                     deg += dStep;
                 }
 
-                starPolygon.push(reverse ? points.reverse() : points);
+                starPolyline.push(reverse ? points.reverse() : points);
             }
 
-            addStar(10, false);
-            addStar(4, true);
+            addStar(10, true);
 
-            console.log(starPolygon);
+            console.log(starPolyline);
 
-            return starPolygon;
+            return starPolyline;
         }
 
         clay.application.create('#main', {
@@ -84,8 +83,9 @@
                 });
 
                 function updateGeometry() {
-                    const result = geometryExtrude.extrudePolygon([buildStarPolygon()], {
+                    const result = geometryExtrude.extrudePolyline(buildStarPolylines(), {
                         depth: 2,
+                        lineWidth: 2,
                         bevelSize: config.bevelSize,
                         bevelSegments: config.bevelSegments
                     });
