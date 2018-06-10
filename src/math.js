@@ -80,7 +80,7 @@ export function slerp(out, start, end, t) {
     const theta = Math.acos(cosT) * t;
 
     scaleAndAdd(rel, end, start, -cosT);
-    normalize(rel, rel);
+    normalize(rel, rel);// start and rel Orthonormal basis
 
     scale(out, start, Math.cos(theta));
     scaleAndAdd(out, out, rel, Math.sin(theta));
@@ -113,7 +113,7 @@ export function area(points, start, end) {
         return 0;
     }
     let area = 0;
-    for (let i = (end - 1) * 2, j = start; j < n * 2;) {
+    for (let i = (end - 1) * 2, j = start * 2; j < end * 2;) {
         const x0 = points[i];
         const y0 = points[i + 1];
         const x1 = points[j];
