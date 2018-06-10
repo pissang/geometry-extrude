@@ -1,5 +1,5 @@
 import earcut from 'earcut';
-import {slerp, scale, normalize, lineIntersection, area} from './math';
+import {slerp, scale, normalize, lineIntersection, area, triangleArea} from './math';
 
 export function triangulate(vertices, holes, dimensions=2) {
     return earcut(vertices, holes, dimensions);
@@ -9,14 +9,37 @@ export function flatten(data) {
     return earcut.flatten(data);
 }
 
-function offsetPolygon(vertices, out, start, end, offset) {
-    for (let i = start, j = end - 1, k = end - 2; i < end; i++) {
+function offsetLine(vertices, out, start, offset) {
+    const i = start;
+    const j = start + 1;
+    const x1 = vertices[i * 2];
+    const y1 = vertices[i * 2 + 1];
+    const x2 = vertices[j * 2];
+    const y2 = vertices[j * 2 + 1];
+    let dx = y2 - y1;
+    let dy = x1 - x2;
+    const l = Math.sqrt(dx * dx + dy * dy) / offset;
+
+    dx /= l;
+    dy /= l;
+
+    out[i * 2] = x1 + dx;
+    out[i * 2 + 1] = y1 + dy;
+    out[j * 2] = x2 + dx;
+    out[j * 2 + 1] = y2 + dy;
+}
+
+export function offsetPolygon(vertices, out, start, end, outStart, offset, miterLimit) {
+    const checkMiterLimit = miterLimit != null;
+    let outOff = outStart;
+    for (let i = start + 1, j = start, k = end - 1; j < end;) {
+        const nextIdx = i === end ? start : i;
         const x1 = vertices[k * 2];
         const y1 = vertices[k * 2 + 1];
         const x2 = vertices[j * 2];
         const y2 = vertices[j * 2 + 1];
-        const x3 = vertices[i * 2];
-        const y3 = vertices[i * 2 + 1];
+        const x3 = vertices[nextIdx * 2];
+        const y3 = vertices[nextIdx * 2 + 1];
 
         let dx1 = y2 - y1;
         let dy1 = x1 - x2;
@@ -35,11 +58,40 @@ function offsetPolygon(vertices, out, start, end, offset) {
         lineIntersection(
             x1 + dx1, y1 + dy1, x2 + dx1, y2 + dy1,
             x2 + dx2, y2 + dy2, x3 + dx2, y3 + dy2,
-            out, j * 2
+            out, outOff * 2
         );
+
+        if (checkMiterLimit) {
+            const isConvex = triangleArea(x1, y1, x2, y2, x3, y3) > 0;
+            const x = out[outOff * 2];
+            const y = out[outOff * 2 + 1];
+            const dx = x - x2;
+            const dy = y - y2;
+            const miter = Math.sqrt(dx * dx + dy * dy);
+            const miterInUnit = Math.abs(miter / offset);
+            if (miterInUnit > miterLimit && isConvex) {
+                const mx = x2 + dx / miterInUnit;
+                const my = y2 + dy / miterInUnit;
+
+                lineIntersection(
+                    x1 + dx1, y1 + dy1, x2 + dx1, y2 + dy1,
+                    mx, my, mx - dy, my + dx,
+                    out, outOff * 2
+                );
+                lineIntersection(
+                    x2 + dx2, y2 + dy2, x3 + dx2, y3 + dy2,
+                    mx, my, mx - dy, my + dx,
+                    out, (outOff + 1) * 2
+                );
+                outOff++;
+            }
+        }
+
+        outOff++;
 
         k = j;
         j = i;
+        i++;
     }
 }
 
@@ -47,13 +99,13 @@ export function offsetPolygonWithHole(vertices, holes, offset) {
     const offsetVertices = new Float32Array(vertices.length);
     const exteriorSize = (holes && holes.length) ? holes[0] : vertices.length / 2;
 
-    offsetPolygon(vertices, offsetVertices, 0, exteriorSize, offset);
+    offsetPolygon(vertices, offsetVertices, 0, exteriorSize, 0, offset);
 
     if (holes) {
         for (let i = 0; i < holes.length; i++) {
             const start = holes[i];
             const end = holes[i + 1] || vertices.length / 2;
-            offsetPolygon(vertices, offsetVertices, start, end, offset);
+            offsetPolygon(vertices, offsetVertices, start, end, start, offset);
         }
     }
 
@@ -352,12 +404,24 @@ function convertPolylineToFlattenPolygon(polyline, lineWidth) {
     }
 
     const polygon = new Float32Array(points.length * 2);
-    offsetPolygon(points, polygon, 0, pointCount, lineWidth / 2);
+    if (pointCount === 2) {
+        offsetLine(points, polygon, 0, lineWidth / 2);
+    }
+    else {
+        offsetPolygon(points, polygon, 0, pointCount, lineWidth / 2);
+    }
     for (let i = 0; i < pointCount; i++) {
         polygon[(pointCount * 2 - i - 1) * 2] = polygon[i * 2];
         polygon[(pointCount * 2 - i - 1) * 2 + 1] = polygon[i * 2 + 1];
     }
-    offsetPolygon(points, polygon, 0, pointCount, -lineWidth / 2);
+    if (pointCount === 2) {
+        offsetLine(points, polygon, 0, -lineWidth / 2);
+    }
+    else {
+        offsetPolygon(points, polygon, 0, pointCount, -lineWidth / 2);
+    }
+
+    console.log(polygon);
 
     return {
         vertices: polygon,
