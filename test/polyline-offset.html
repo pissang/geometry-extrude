@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="X-UA-Compatible" content="ie=edge">
-    <title>Polygon Offset Test</title>
+    <title>Polyline Offset Test</title>
 </head>
 <body>
     <canvas id="main" width="800" height="600"></canvas>
@@ -20,7 +20,7 @@
                 ctx.lineTo(x, y);
             }
             ctx.lineWidth = 1;
-            ctx.closePath();
+            // ctx.closePath();
             ctx.strokeStyle = color;
             ctx.stroke();
         }
@@ -35,15 +35,15 @@
 
         drawPolygon(polygon, '#f00');
 
-        // drawPolygon(
-        //     geometryExtrude.offsetPolygonWithHole(polygon, null, 10, null, true), '#0f0'
-        // );
-        // drawPolygon(
-        //     geometryExtrude.offsetPolygonWithHole(polygon, null, -5, null, true), '#00f'
-        // );
+        drawPolygon(
+            geometryExtrude.offsetPolygonWithHole(polygon, null, 10), '#0f0'
+        );
+        drawPolygon(
+            geometryExtrude.offsetPolygonWithHole(polygon, null, -5), '#00f'
+        );
 
         drawPolygon(
-            geometryExtrude.offsetPolygonWithHole(polygon, null, 20, 1, true), '#000'
+            geometryExtrude.offsetPolygonWithHole(polygon, null, 20, 1), '#000'
         );
     </script>
 </body>

@@ -658,6 +658,9 @@ earcut_1.default = default_1;
 function dot(v1, v2) {
     return v1[0] * v2[0] + v1[1] * v2[1] + v1[2] * v2[2];
 }
+function v2Dot(v1, v2) {
+    return v1[0] * v2[0] + v1[1] * v2[1];
+}
 
 function normalize(out, v) {
     const x = v[0];
@@ -667,6 +670,15 @@ function normalize(out, v) {
     out[0] = x / d;
     out[1] = y / d;
     out[2] = z / d;
+    return out;
+}
+
+function v2Normalize(out, v) {
+    const x = v[0];
+    const y = v[1];
+    const d = Math.sqrt(x * x + y * y);
+    out[0] = x / d;
+    out[1] = y / d;
     return out;
 }
 
@@ -683,6 +695,14 @@ function scaleAndAdd(out, v1, v2, s) {
     out[0] = v1[0] + v2[0] * s;
     out[1] = v1[1] + v2[1] * s;
     out[2] = v1[2] + v2[2] * s;
+    return out;
+}
+
+
+
+function v2Add(out, v1, v2) {
+    out[0] = v1[0] + v2[0];
+    out[1] = v1[1] + v2[1];
     return out;
 }
 
@@ -706,23 +726,7 @@ function slerp(out, start, end, t) {
     return out;
 }
 
-function lineIntersection(x1, y1, x2, y2, x3, y3, x4, y4, out, writeOffset) {
-    const dx1 = x2 - x1;
-    const dx2 = x4 - x3;
-    const dy1 = y2 - y1;
-    const dy2 = y4 - y3;
 
-    const cross = dy2 * dx1 - dx2 * dy1;
-    const tmp1 = y1 - y3;
-    const tmp2 = x1 - x3;
-    const t1 = (dx2 * tmp1 - dy2 * tmp2) / cross;
-    // const t2 = (dx1 * tmp1 - dy1 * tmp2) / cross;
-
-    out[writeOffset] = x1 + t1 * (x2 - x1);
-    out[writeOffset + 1] = y1 + t1 * (y2 - y1);
-
-    return t1;
-}
 
 function area$1(points, start, end) {
     // Signed polygon area
@@ -752,104 +756,97 @@ function flatten(data) {
     return earcut_1.flatten(data);
 }
 
-function offsetLine(vertices, out, start, offset) {
-    const i = start;
-    const j = start + 1;
-    const x1 = vertices[i * 2];
-    const y1 = vertices[i * 2 + 1];
-    const x2 = vertices[j * 2];
-    const y2 = vertices[j * 2 + 1];
-    let dx = y2 - y1;
-    let dy = x1 - x2;
-    const l = Math.sqrt(dx * dx + dy * dy) / offset;
+const v1 = [];
+const v2 = [];
+const v = [];
 
-    dx /= l;
-    dy /= l;
-
-    out[i * 2] = x1 + dx;
-    out[i * 2 + 1] = y1 + dy;
-    out[j * 2] = x2 + dx;
-    out[j * 2 + 1] = y2 + dy;
-}
-
-function offsetPolygon(vertices, out, start, end, outStart, offset, miterLimit) {
+function offsetPolygon(
+    vertices, out, start, end, outStart, offset, miterLimit, close
+) {
     const checkMiterLimit = miterLimit != null;
     let outOff = outStart;
-    for (let i = start + 1, j = start, k = end - 1; j < end;) {
-        const nextIdx = i === end ? start : i;
-        const x1 = vertices[k * 2];
-        const y1 = vertices[k * 2 + 1];
-        const x2 = vertices[j * 2];
-        const y2 = vertices[j * 2 + 1];
+    for (let i = start; i < end; i++) {
+        const nextIdx = i === end - 1 ? start : i + 1;
+        const prevIdx = i === start ? end - 1 : i - 1;
+        const x1 = vertices[prevIdx * 2];
+        const y1 = vertices[prevIdx * 2 + 1];
+        const x2 = vertices[i * 2];
+        const y2 = vertices[i * 2 + 1];
         const x3 = vertices[nextIdx * 2];
         const y3 = vertices[nextIdx * 2 + 1];
 
-        let dx1 = y2 - y1;
-        let dy1 = x1 - x2;
+        v1[0] = x2 - x1;
+        v1[1] = y2 - y1;
+        v2[0] = x3 - x2;
+        v2[1] = y3 - y2;
 
-        let dx2 = y3 - y2;
-        let dy2 = x2 - x3;
+        v2Normalize(v1, v1);
+        v2Normalize(v2, v2);
+        // PENDING Why using sub will lost the direction info.
+        if (!close && i === start) {
+            v[0] = v2[1];
+            v[1] = -v2[0];
+            v2Normalize(v, v);
+            out[outOff * 2] = x2 + v[0] * offset;
+            out[outOff * 2 + 1] = y2 + v[1] * offset;
+            outOff++;
+        }
+        else if (!close && i === end - 1) {
+            v[0] = v1[1];
+            v[1] = -v1[0];
+            v2Normalize(v, v);
+            out[outOff * 2] = x2 + v[0] * offset;
+            out[outOff * 2 + 1] = y2 + v[1] * offset;
+            outOff++;
+        }
+        else {
+            v2Add(v, v2, v1);
+            const tmp = v[1];
+            v[1] = -v[0];
+            v[0] = tmp;
 
-        const l1 = Math.sqrt(dx1 * dx1 + dy1 * dy1) / offset;
-        const l2 = Math.sqrt(dx2 * dx2 + dy2 * dy2) / offset;
+            v2Normalize(v, v);
 
-        dx1 /= l1;
-        dy1 /= l1;
-        dx2 /= l2;
-        dy2 /= l2;
+            const cosA = v2Dot(v, v2);
+            const sinA = Math.sqrt(1 - cosA * cosA);
+            const miter = offset / sinA;
 
-        lineIntersection(
-            x1 + dx1, y1 + dy1, x2 + dx1, y2 + dy1,
-            x2 + dx2, y2 + dy2, x3 + dx2, y3 + dy2,
-            out, outOff * 2
-        );
-
-        if (checkMiterLimit) {
-            const x = out[outOff * 2];
-            const y = out[outOff * 2 + 1];
-            const dx = x - x2;
-            const dy = y - y2;
-            // PENDING
-            const isConvex = (x3 - x2 * 2 + x1) * dx + (y3 - y2 * 2 + y1) * dy < 0;
-            const miter = Math.sqrt(dx * dx + dy * dy);
-            const miterInUnit = Math.abs(miter / offset);
-            if (miterInUnit > miterLimit && isConvex) {
-                const mx = x2 + dx / miterInUnit;
-                const my = y2 + dy / miterInUnit;
-
-                lineIntersection(
-                    x1 + dx1, y1 + dy1, x2 + dx1, y2 + dy1,
-                    mx, my, mx - dy, my + dx,
-                    out, outOff * 2
-                );
-                lineIntersection(
-                    x2 + dx2, y2 + dy2, x3 + dx2, y3 + dy2,
-                    mx, my, mx - dy, my + dx,
-                    out, (outOff + 1) * 2
-                );
+            if (checkMiterLimit && (1 / sinA) > miterLimit && cosA < 0) {
+                const mx = x2 + v[0] * offset;
+                const my = y2 + v[1] * offset;
+                const halfA = Math.acos(sinA) / 2;
+                const dist = Math.tan(halfA) * Math.abs(offset);
+                out[outOff * 2] = mx + v[1] * dist;
+                out[outOff * 2 + 1] = my - v[0] * dist;
+                outOff++;
+                out[outOff * 2] = mx - v[1] * dist;
+                out[outOff * 2 + 1] = my + v[0] * dist;
+                outOff++;
+            }
+            else {
+                out[outOff * 2] = x2 + v[0] * miter;
+                out[outOff * 2 + 1] = y2 + v[1] * miter;
                 outOff++;
             }
         }
-
-        outOff++;
-
-        k = j;
-        j = i;
-        i++;
     }
 }
 
-function offsetPolygonWithHole(vertices, holes, offset) {
-    const offsetVertices = new Float32Array(vertices.length);
+function offsetPolygonWithHole(vertices, holes, offset, miterLimit, close) {
+    const offsetVertices = miterLimit != null ? [] : new Float32Array(vertices.length);
     const exteriorSize = (holes && holes.length) ? holes[0] : vertices.length / 2;
 
-    offsetPolygon(vertices, offsetVertices, 0, exteriorSize, 0, offset);
+    offsetPolygon(vertices, offsetVertices, 0, exteriorSize, 0, offset, miterLimit, close);
 
     if (holes) {
         for (let i = 0; i < holes.length; i++) {
             const start = holes[i];
             const end = holes[i + 1] || vertices.length / 2;
-            offsetPolygon(vertices, offsetVertices, start, end, start, offset);
+            offsetPolygon(
+                vertices, offsetVertices, start, end,
+                miterLimit != null ? offsetVertices.length / 2 : start,
+                offset, miterLimit, close
+            );
         }
     }
 
@@ -1043,7 +1040,7 @@ function extrudeFlattenPolygon(flaternPolygons, opts) {
         }
         let topVertices = vertices;
         if (opts.bevelSize > 0) {
-            topVertices = offsetPolygonWithHole(vertices, holes, opts.bevelSize);
+            topVertices = offsetPolygonWithHole(vertices, holes, opts.bevelSize, null, true);
         }
         const indices = triangulate(topVertices, holes, dimensions);
         const polygonVertexCount = vertices.length / 2;
@@ -1149,18 +1146,8 @@ function convertPolylineToFlattenPolygon(polyline, lineWidth) {
 
     const outsidePoints = [];
     const insidePoints = [];
-    if (pointCount === 2) {
-        offsetLine(points, insidePoints, 0, lineWidth / 2);
-    }
-    else {
-        offsetPolygon(points, insidePoints, 0, pointCount, 0, lineWidth / 2, 0.5);
-    }
-    if (pointCount === 2) {
-        offsetLine(points, outsidePoints, 0, -lineWidth / 2);
-    }
-    else {
-        offsetPolygon(points, outsidePoints, 0, pointCount, 0, -lineWidth / 2, 0.5);
-    }
+    offsetPolygon(points, insidePoints, 0, pointCount, 0, lineWidth / 2, 0.5);
+    offsetPolygon(points, outsidePoints, 0, pointCount, 0, -lineWidth / 2, 0.5);
 
     const polygon = new Float32Array(outsidePoints.length + insidePoints.length);
 
@@ -1211,7 +1198,6 @@ function extrudePolyline(polylines, opts) {
 
 exports.triangulate = triangulate;
 exports.flatten = flatten;
-exports.offsetPolygon = offsetPolygon;
 exports.offsetPolygonWithHole = offsetPolygonWithHole;
 exports.extrudePolygon = extrudePolygon;
 exports.extrudePolyline = extrudePolyline;

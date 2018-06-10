@@ -1,6 +1,9 @@
 export function dot(v1, v2) {
     return v1[0] * v2[0] + v1[1] * v2[1] + v1[2] * v2[2];
 }
+export function v2Dot(v1, v2) {
+    return v1[0] * v2[0] + v1[1] * v2[1];
+}
 
 export function normalize(out, v) {
     const x = v[0];
@@ -10,6 +13,15 @@ export function normalize(out, v) {
     out[0] = x / d;
     out[1] = y / d;
     out[2] = z / d;
+    return out;
+}
+
+export function v2Normalize(out, v) {
+    const x = v[0];
+    const y = v[1];
+    const d = Math.sqrt(x * x + y * y);
+    out[0] = x / d;
+    out[1] = y / d;
     return out;
 }
 
@@ -41,10 +53,22 @@ export function add(out, v1, v2) {
     return out;
 }
 
+export function v2Add(out, v1, v2) {
+    out[0] = v1[0] + v2[0];
+    out[1] = v1[1] + v2[1];
+    return out;
+}
+
 export function sub(out, v1, v2) {
     out[0] = v1[0] - v2[0];
     out[1] = v1[1] - v2[1];
     out[2] = v1[2] - v2[2];
+    return out;
+}
+
+export function v2Sub(out, v1, v2) {
+    out[0] = v1[0] - v2[0];
+    out[1] = v1[1] - v2[1];
     return out;
 }
 
