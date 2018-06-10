@@ -41,6 +41,11 @@
         drawPolygon(
             geometryExtrude.offsetPolygonWithHole(polygon, null, -5), '#00f'
         );
+
+        const tmp = [];
+        geometryExtrude.offsetPolygon(polygon, tmp, 0, polygon.length / 2, 0, 20, 1);
+
+        drawPolygon(tmp, '#000')
     </script>
 </body>
 </html>

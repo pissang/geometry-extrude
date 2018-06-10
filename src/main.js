@@ -29,6 +29,9 @@ function offsetLine(vertices, out, start, offset) {
     out[j * 2 + 1] = y2 + dy;
 }
 
+const v1 = [];
+const v2 = [];
+
 export function offsetPolygon(vertices, out, start, end, outStart, offset, miterLimit) {
     const checkMiterLimit = miterLimit != null;
     let outOff = outStart;
@@ -62,11 +65,12 @@ export function offsetPolygon(vertices, out, start, end, outStart, offset, miter
         );
 
         if (checkMiterLimit) {
-            const isConvex = triangleArea(x1, y1, x2, y2, x3, y3) > 0;
             const x = out[outOff * 2];
             const y = out[outOff * 2 + 1];
             const dx = x - x2;
             const dy = y - y2;
+            // PENDING
+            const isConvex = (x3 - x2 * 2 + x1) * dx + (y3 - y2 * 2 + y1) * dy < 0;
             const miter = Math.sqrt(dx * dx + dy * dy);
             const miterInUnit = Math.abs(miter / offset);
             if (miterInUnit > miterLimit && isConvex) {
@@ -403,22 +407,32 @@ function convertPolylineToFlattenPolygon(polyline, lineWidth) {
         points[k++] = polyline[i][1];
     }
 
-    const polygon = new Float32Array(points.length * 2);
+    const outsidePoints = [];
+    const insidePoints = [];
     if (pointCount === 2) {
-        offsetLine(points, polygon, 0, lineWidth / 2);
+        offsetLine(points, insidePoints, 0, lineWidth / 2);
     }
     else {
-        offsetPolygon(points, polygon, 0, pointCount, lineWidth / 2);
-    }
-    for (let i = 0; i < pointCount; i++) {
-        polygon[(pointCount * 2 - i - 1) * 2] = polygon[i * 2];
-        polygon[(pointCount * 2 - i - 1) * 2 + 1] = polygon[i * 2 + 1];
+        offsetPolygon(points, insidePoints, 0, pointCount, 0, lineWidth / 2, 0.5);
     }
     if (pointCount === 2) {
-        offsetLine(points, polygon, 0, -lineWidth / 2);
+        offsetLine(points, outsidePoints, 0, -lineWidth / 2);
     }
     else {
-        offsetPolygon(points, polygon, 0, pointCount, -lineWidth / 2);
+        offsetPolygon(points, outsidePoints, 0, pointCount, 0, -lineWidth / 2, 0.5);
+    }
+
+    const polygon = new Float32Array(outsidePoints.length + insidePoints.length);
+
+    let offset = 0;
+    const insidePointCount = insidePoints.length / 2;
+    for (let i = 0; i < insidePointCount; i++) {
+        const tmp = (insidePointCount - 1 - i) * 2;
+        polygon[offset++] = insidePoints[tmp];
+        polygon[offset++] = insidePoints[tmp + 1];
+    }
+    for (let i = 0; i < outsidePoints.length; i++) {
+        polygon[offset++] = outsidePoints[i];
     }
 
     console.log(polygon);
