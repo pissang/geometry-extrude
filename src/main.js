@@ -13,7 +13,7 @@ const v1 = [];
 const v2 = [];
 const v = [];
 
-function offsetPolygon(
+function innerOffsetPolygon(
     vertices, out, start, end, outStart, offset, miterLimit, close
 ) {
     const checkMiterLimit = miterLimit != null;
@@ -85,17 +85,17 @@ function offsetPolygon(
     }
 }
 
-export function offsetPolygonWithHole(vertices, holes, offset, miterLimit, close) {
+export function offsetPolygon(vertices, holes, offset, miterLimit, close) {
     const offsetVertices = miterLimit != null ? [] : new Float32Array(vertices.length);
     const exteriorSize = (holes && holes.length) ? holes[0] : vertices.length / 2;
 
-    offsetPolygon(vertices, offsetVertices, 0, exteriorSize, 0, offset, miterLimit, close);
+    innerOffsetPolygon(vertices, offsetVertices, 0, exteriorSize, 0, offset, miterLimit, close);
 
     if (holes) {
         for (let i = 0; i < holes.length; i++) {
             const start = holes[i];
             const end = holes[i + 1] || vertices.length / 2;
-            offsetPolygon(
+            innerOffsetPolygon(
                 vertices, offsetVertices, start, end,
                 miterLimit != null ? offsetVertices.length / 2 : start,
                 offset, miterLimit, close
@@ -161,15 +161,23 @@ function addExtrudeSide(
                         v1[0] = vertices[idx] - topVertices[idx];
                         v1[1] = vertices[idx + 1] - topVertices[idx + 1];
                         v1[2] = 0;
-                        normalize(v1, v1);
+                        const l = Math.sqrt(v1[0] * v1[0] + v1[1] * v1[1]);
+                        v1[0] /= l;
+                        v1[1] /= l;
 
                         const t = (Math.floor(s / splitBevel) + (s % splitBevel)) / bevelSegments;
                         k === 0 ? slerp(v, v0, v1, t)
                             : slerp(v, v1, v2, t);
 
-                        out.position[cursors.vertex * 3] = v[0] * bevelSize + topVertices[idx];
-                        out.position[cursors.vertex * 3 + 1] = v[1] * bevelSize + topVertices[idx + 1];
-                        out.position[cursors.vertex * 3 + 2] = v[2] * bevelSize + z;
+                        // l is always larger than bevelSize.
+                        // PENDING not use linear lerp
+                        const t2 = 1 - Math.cos(t * Math.PI / 2);
+                        const t3 = 1 - Math.cos((1 - t) * Math.PI / 2);
+                        const l2 = (l - bevelSize) * (k === 0 ? t2 : t3) + bevelSize;
+
+                        out.position[cursors.vertex * 3] = v[0] * l2 + topVertices[idx];
+                        out.position[cursors.vertex * 3 + 1] = v[1] * l2 + topVertices[idx + 1];
+                        out.position[cursors.vertex * 3 + 2] = v[2] * l2 + z;
                         cursors.vertex++;
                     }
 
@@ -278,31 +286,13 @@ function convertToAnticlockwise(vertices, holes) {
     }
 }
 
-
-function extrudeFlattenPolygon(flaternPolygons, opts) {
-    const preparedData = [];
+function innerExtrudeTriangulatedPolygon(preparedData, opts) {
     let indexCount = 0;
     let vertexCount = 0;
-    for (let p = 0; p < flaternPolygons.length; p++) {
-        const {vertices, holes, dimensions} = flaternPolygons[p];
-
-        convertToAnticlockwise(vertices, holes);
-
-        if (dimensions !== 2) {
-            throw new Error('Only 2D polygon points are supported');
-        }
-        let topVertices = vertices;
-        if (opts.bevelSize > 0) {
-            topVertices = offsetPolygonWithHole(vertices, holes, opts.bevelSize, null, true);
-        }
-        const indices = triangulate(topVertices, holes, dimensions);
+    for (let p = 0; p < preparedData.length; p++) {
+        const {indices, vertices, holes} = preparedData[p];
         const polygonVertexCount = vertices.length / 2;
-        preparedData.push({
-            indices,
-            vertices,
-            topVertices,
-            holes
-        });
+
         indexCount += indices.length * 2;
         vertexCount += polygonVertexCount * 2;
         const ringCount = 2 + opts.bevelSegments * 2;
@@ -382,14 +372,31 @@ export function extrudePolygon(polygons, opts) {
     opts = opts || {};
     normalizeOpts(opts);
 
-    const flattenPolygons = [];
+    const preparedData = [];
     for (let i = 0; i < polygons.length; i++) {
-        flattenPolygons.push(earcut.flatten(polygons[i]));
+        const {vertices, holes, dimensions} = earcut.flatten(polygons[i]);
+        convertToAnticlockwise(vertices, holes);
+
+        if (dimensions !== 2) {
+            throw new Error('Only 2D polygon points are supported');
+        }
+        let topVertices = vertices;
+        if (opts.bevelSize > 0) {
+            topVertices = offsetPolygon(vertices, holes, opts.bevelSize, null, true);
+        }
+        const indices = triangulate(topVertices, holes, dimensions);
+        preparedData.push({
+            indices,
+            vertices,
+            topVertices,
+            holes
+        });
     }
-    return extrudeFlattenPolygon(flattenPolygons, opts);
+    return innerExtrudeTriangulatedPolygon(preparedData, opts);
 };
 
 function convertPolylineToFlattenPolygon(polyline, lineWidth) {
+    // TODO Built indices.
     const pointCount = polyline.length;
     const points = new Float32Array(pointCount * 2);
     for (let i = 0, k = 0; i < pointCount; i++) {
@@ -399,8 +406,8 @@ function convertPolylineToFlattenPolygon(polyline, lineWidth) {
 
     const outsidePoints = [];
     const insidePoints = [];
-    offsetPolygon(points, insidePoints, 0, pointCount, 0, lineWidth / 2, 0.5);
-    offsetPolygon(points, outsidePoints, 0, pointCount, 0, -lineWidth / 2, 0.5);
+    innerOffsetPolygon(points, insidePoints, 0, pointCount, 0, lineWidth / 2, 0.5);
+    innerOffsetPolygon(points, outsidePoints, 0, pointCount, 0, -lineWidth / 2, 0.5);
 
     const polygon = new Float32Array(outsidePoints.length + insidePoints.length);
 
@@ -446,5 +453,5 @@ export function extrudePolyline(polylines, opts) {
         polygons.push(convertPolylineToFlattenPolygon(polylines[i], opts.lineWidth));
     }
 
-    return extrudeFlattenPolygon(polygons, opts);
+    return innerExtrudeTriangulatedPolygon(polygons, opts);
 }
