@@ -22,7 +22,7 @@
     <script>
 
         const config = {
-            bevelSize: 0.2,
+            bevelSize: 0,
             bevelSegments: 2,
             n: 5
         };
@@ -85,7 +85,7 @@
                 function updateGeometry() {
                     const result = geometryExtrude.extrudePolyline(buildStarPolylines(), {
                         depth: 2,
-                        lineWidth: 2,
+                        lineWidth: 1,
                         bevelSize: config.bevelSize,
                         bevelSegments: config.bevelSegments
                     });

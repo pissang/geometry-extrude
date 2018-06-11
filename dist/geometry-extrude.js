@@ -718,7 +718,7 @@ function slerp(out, start, end, t) {
     const theta = Math.acos(cosT) * t;
 
     scaleAndAdd(rel, end, start, -cosT);
-    normalize(rel, rel);
+    normalize(rel, rel);// start and rel Orthonormal basis
 
     scale(out, start, Math.cos(theta));
     scaleAndAdd(out, out, rel, Math.sin(theta));
@@ -735,7 +735,7 @@ function area$1(points, start, end) {
         return 0;
     }
     let area = 0;
-    for (let i = (end - 1) * 2, j = start; j < n * 2;) {
+    for (let i = (end - 1) * 2, j = start * 2; j < end * 2;) {
         const x0 = points[i];
         const y0 = points[i + 1];
         const x1 = points[j];
@@ -760,11 +760,15 @@ const v1 = [];
 const v2 = [];
 const v = [];
 
-function offsetPolygon(
+function innerOffsetPolygon(
     vertices, out, start, end, outStart, offset, miterLimit, close
 ) {
     const checkMiterLimit = miterLimit != null;
     let outOff = outStart;
+    let indicesMap = null;
+    if (checkMiterLimit) {
+        indicesMap = new Uint32Array(end - start);
+    }
     for (let i = start; i < end; i++) {
         const nextIdx = i === end - 1 ? start : i + 1;
         const prevIdx = i === start ? end - 1 : i - 1;
@@ -782,6 +786,8 @@ function offsetPolygon(
 
         v2Normalize(v1, v1);
         v2Normalize(v2, v2);
+
+        checkMiterLimit && (indicesMap[i] = outOff);
         // PENDING Why using sub will lost the direction info.
         if (!close && i === start) {
             v[0] = v2[1];
@@ -830,19 +836,23 @@ function offsetPolygon(
             }
         }
     }
+
+    return indicesMap;
 }
 
-function offsetPolygonWithHole(vertices, holes, offset, miterLimit, close) {
+function offsetPolygon(vertices, holes, offset, miterLimit, close) {
     const offsetVertices = miterLimit != null ? [] : new Float32Array(vertices.length);
     const exteriorSize = (holes && holes.length) ? holes[0] : vertices.length / 2;
 
-    offsetPolygon(vertices, offsetVertices, 0, exteriorSize, 0, offset, miterLimit, close);
+    innerOffsetPolygon(
+        vertices, offsetVertices, 0, exteriorSize, 0, offset, miterLimit, close, false
+    );
 
     if (holes) {
         for (let i = 0; i < holes.length; i++) {
             const start = holes[i];
             const end = holes[i + 1] || vertices.length / 2;
-            offsetPolygon(
+            innerOffsetPolygon(
                 vertices, offsetVertices, start, end,
                 miterLimit != null ? offsetVertices.length / 2 : start,
                 offset, miterLimit, close
@@ -908,15 +918,24 @@ function addExtrudeSide(
                         v1[0] = vertices[idx] - topVertices[idx];
                         v1[1] = vertices[idx + 1] - topVertices[idx + 1];
                         v1[2] = 0;
-                        normalize(v1, v1);
+                        const l = Math.sqrt(v1[0] * v1[0] + v1[1] * v1[1]);
+                        v1[0] /= l;
+                        v1[1] /= l;
 
                         const t = (Math.floor(s / splitBevel) + (s % splitBevel)) / bevelSegments;
                         k === 0 ? slerp(v, v0, v1, t)
                             : slerp(v, v1, v2, t);
 
-                        out.position[cursors.vertex * 3] = v[0] * bevelSize + topVertices[idx];
-                        out.position[cursors.vertex * 3 + 1] = v[1] * bevelSize + topVertices[idx + 1];
-                        out.position[cursors.vertex * 3 + 2] = v[2] * bevelSize + z;
+                        const t2 = k === 0  ? t : 1 - t;
+                        const a = bevelSize * Math.sin(t2 * Math.PI / 2);
+                        const b = l * Math.cos(t2 * Math.PI / 2);
+
+                        // ellipse radius
+                        const r = bevelSize * l / Math.sqrt(a * a + b * b);
+
+                        out.position[cursors.vertex * 3] = v[0] * r + topVertices[idx];
+                        out.position[cursors.vertex * 3 + 1] = v[1] * r + topVertices[idx + 1];
+                        out.position[cursors.vertex * 3 + 2] = v[2] * r + z;
                         cursors.vertex++;
                     }
 
@@ -1009,7 +1028,7 @@ function normalizeOpts(opts) {
     opts.bevelSegments = Math.round(opts.bevelSegments);
 }
 
-function convertToAnticlockwise(vertices, holes) {
+function convertToClockwise(vertices, holes) {
     let polygonVertexCount = vertices.length / 2;
     let start = 0;
     let end = holes && holes.length ? holes[0] : polygonVertexCount;
@@ -1025,31 +1044,13 @@ function convertToAnticlockwise(vertices, holes) {
     }
 }
 
-
-function extrudeFlattenPolygon(flaternPolygons, opts) {
-    const preparedData = [];
+function innerExtrudeTriangulatedPolygon(preparedData, opts) {
     let indexCount = 0;
     let vertexCount = 0;
-    for (let p = 0; p < flaternPolygons.length; p++) {
-        const {vertices, holes, dimensions} = flaternPolygons[p];
-
-        convertToAnticlockwise(vertices, holes);
-
-        if (dimensions !== 2) {
-            throw new Error('Only 2D polygon points are supported');
-        }
-        let topVertices = vertices;
-        if (opts.bevelSize > 0) {
-            topVertices = offsetPolygonWithHole(vertices, holes, opts.bevelSize, null, true);
-        }
-        const indices = triangulate(topVertices, holes, dimensions);
+    for (let p = 0; p < preparedData.length; p++) {
+        const {indices, vertices, holes} = preparedData[p];
         const polygonVertexCount = vertices.length / 2;
-        preparedData.push({
-            indices,
-            vertices,
-            topVertices,
-            holes
-        });
+
         indexCount += indices.length * 2;
         vertexCount += polygonVertexCount * 2;
         const ringCount = 2 + opts.bevelSegments * 2;
@@ -1129,14 +1130,30 @@ function extrudePolygon(polygons, opts) {
     opts = opts || {};
     normalizeOpts(opts);
 
-    const flattenPolygons = [];
+    const preparedData = [];
     for (let i = 0; i < polygons.length; i++) {
-        flattenPolygons.push(earcut_1.flatten(polygons[i]));
+        const {vertices, holes, dimensions} = earcut_1.flatten(polygons[i]);
+        convertToClockwise(vertices, holes);
+
+        if (dimensions !== 2) {
+            throw new Error('Only 2D polygon points are supported');
+        }
+        const topVertices = opts.bevelSize > 0
+            ? offsetPolygon(vertices, holes, opts.bevelSize, null, true) : vertices;
+        const indices = triangulate(topVertices, holes, dimensions);
+        preparedData.push({
+            indices,
+            vertices,
+            topVertices,
+            holes
+        });
     }
-    return extrudeFlattenPolygon(flattenPolygons, opts);
+    return innerExtrudeTriangulatedPolygon(preparedData, opts);
 }
 
-function convertPolylineToFlattenPolygon(polyline, lineWidth) {
+function convertPolylineToTriangulatedPolygon(polyline, opts) {
+    const lineWidth = opts.lineWidth;
+    // TODO Built indices.
     const pointCount = polyline.length;
     const points = new Float32Array(pointCount * 2);
     for (let i = 0, k = 0; i < pointCount; i++) {
@@ -1144,30 +1161,72 @@ function convertPolylineToFlattenPolygon(polyline, lineWidth) {
         points[k++] = polyline[i][1];
     }
 
-    const outsidePoints = [];
-    const insidePoints = [];
-    offsetPolygon(points, insidePoints, 0, pointCount, 0, lineWidth / 2, 0.5);
-    offsetPolygon(points, outsidePoints, 0, pointCount, 0, -lineWidth / 2, 0.5);
+    if (area$1(points, 0, pointCount) < 0) {
+        reversePoints(points, 2, 0, pointCount);
+    }
 
-    const polygon = new Float32Array(outsidePoints.length + insidePoints.length);
+    const insidePoints = [];
+    const outsidePoints = [];
+    const outsideIndicesMap = innerOffsetPolygon(
+        points, outsidePoints, 0, pointCount, 0, lineWidth / 2, 100, false
+    );
+    const insideIndicesMap = innerOffsetPolygon(
+        points, insidePoints, 0, pointCount, 0, -lineWidth / 2, 100, false
+    );
+
+    const polygonVertexCount = (insidePoints.length + outsidePoints.length) / 2;
+    const polygonVertices = new Float32Array(polygonVertexCount * 2);
 
     let offset = 0;
-    const insidePointCount = insidePoints.length / 2;
-    for (let i = 0; i < insidePointCount; i++) {
-        const tmp = (insidePointCount - 1 - i) * 2;
-        polygon[offset++] = insidePoints[tmp];
-        polygon[offset++] = insidePoints[tmp + 1];
+    const outsidePointCount = outsidePoints.length / 2;
+    for (let i = 0; i < outsidePointCount; i++) {
+        const tmp = (outsidePointCount - 1 - i) * 2;
+        polygonVertices[offset++] = outsidePoints[tmp];
+        polygonVertices[offset++] = outsidePoints[tmp + 1];
     }
-    for (let i = 0; i < outsidePoints.length; i++) {
-        polygon[offset++] = outsidePoints[i];
+    for (let i = 0; i < insidePoints.length; i++) {
+        polygonVertices[offset++] = insidePoints[i];
     }
 
-    console.log(polygon);
+    // Built indices
+    const indices = new (polygonVertexCount > 0xffff ? Uint32Array : Uint16Array)(
+        ((pointCount - 1) * 2 + (polygonVertexCount - pointCount * 2)) * 3
+    );
+    let off = 0;
+    for (let i = 0; i < pointCount - 1; i++) {
+        const i2 = i + 1;
+        indices[off++] = outsidePointCount - outsideIndicesMap[i] - 1;
+        indices[off++] = outsidePointCount - outsideIndicesMap[i2] - 1;
+        indices[off++] = insideIndicesMap[i2] + outsidePointCount;
+
+        indices[off++] = outsidePointCount - outsideIndicesMap[i] - 1;
+        indices[off++] = insideIndicesMap[i2] + outsidePointCount;
+        indices[off++] = insideIndicesMap[i] + outsidePointCount;
+    }
+    // const indices = triangulate(polygonVertices, [], 2);
+
+    const topVertices = opts.bevelSize > 0
+        ? offsetPolygon(polygonVertices, [], opts.bevelSize, null, true) : polygonVertices;
+
+    // const debugCanvas = document.createElement('canvas');
+    // const ctx = debugCanvas.getContext('2d');
+    // debugCanvas.style.cssText = 'position:absolute;left:0;bottom:0;z-index:100';
+    // debugCanvas.width = debugCanvas.height = 400;
+    // document.body.appendChild(debugCanvas);
+    // ctx.beginPath();
+    // ctx.translate(100, 100);
+    // ctx.scale(4, 4);
+    // for (let i = 0; i < polygonVertices.length;) {
+    //     ctx.lineTo(polygonVertices[i++], polygonVertices[i++]);
+    // }
+    // ctx.stroke();
+
 
     return {
-        vertices: polygon,
-        holes: [],
-        dimensions: 2
+        vertices: polygonVertices,
+        indices,
+        topVertices,
+        holes: []
     };
 }
 
@@ -1187,18 +1246,18 @@ function extrudePolyline(polylines, opts) {
     if (opts.lineWidth == null) {
         opts.lineWidth = 1;
     }
-    const polygons = [];
+    const preparedData = [];
     // Extrude polyline to polygon
     for (let i = 0; i < polylines.length; i++) {
-        polygons.push(convertPolylineToFlattenPolygon(polylines[i], opts.lineWidth));
+        preparedData.push(convertPolylineToTriangulatedPolygon(polylines[i], opts));
     }
 
-    return extrudeFlattenPolygon(polygons, opts);
+    return innerExtrudeTriangulatedPolygon(preparedData, opts);
 }
 
 exports.triangulate = triangulate;
 exports.flatten = flatten;
-exports.offsetPolygonWithHole = offsetPolygonWithHole;
+exports.offsetPolygon = offsetPolygon;
 exports.extrudePolygon = extrudePolygon;
 exports.extrudePolyline = extrudePolyline;
 
