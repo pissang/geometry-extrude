@@ -85,11 +85,10 @@
                 function updateGeometry() {
                     const result = geometryExtrude.extrudePolyline(buildStarPolylines(), {
                         depth: 2,
-                        lineWidth: 1,
+                        lineWidth: 2,
                         bevelSize: config.bevelSize,
                         bevelSegments: config.bevelSegments
                     });
-                    console.log(result.indices, result.position);
                     geometry.attributes.position.value = result.position;
                     geometry.indices = result.indices;
                     geometry.generateVertexNormals();

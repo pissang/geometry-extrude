@@ -815,9 +815,12 @@ function innerOffsetPolygon(
 
             const cosA = v2Dot(v, v2);
             const sinA = Math.sqrt(1 - cosA * cosA);
-            const miter = offset / sinA;
+            // PENDING
+            const miter = offset * Math.min(10, 1 / sinA);
 
-            if (checkMiterLimit && (1 / sinA) > miterLimit && cosA < 0) {
+            const isCovex = offset * cosA < 0;
+
+            if (checkMiterLimit && (1 / sinA) > miterLimit && isCovex) {
                 const mx = x2 + v[0] * offset;
                 const my = y2 + v[1] * offset;
                 const halfA = Math.acos(sinA) / 2;
@@ -830,6 +833,9 @@ function innerOffsetPolygon(
                 outOff++;
             }
             else {
+                if (x2 + v[0] * miter < -100) {
+                    debugger;
+                }
                 out[outOff * 2] = x2 + v[0] * miter;
                 out[outOff * 2 + 1] = y2 + v[1] * miter;
                 outOff++;
@@ -1168,10 +1174,11 @@ function convertPolylineToTriangulatedPolygon(polyline, opts) {
     const insidePoints = [];
     const outsidePoints = [];
     const outsideIndicesMap = innerOffsetPolygon(
-        points, outsidePoints, 0, pointCount, 0, lineWidth / 2, 100, false
+        points, outsidePoints, 0, pointCount, 0, -lineWidth / 2, opts.miterLimit, false
     );
+    reversePoints(points, 2, 0, pointCount);
     const insideIndicesMap = innerOffsetPolygon(
-        points, insidePoints, 0, pointCount, 0, -lineWidth / 2, 100, false
+        points, insidePoints, 0, pointCount, 0, -lineWidth / 2, opts.miterLimit, false
     );
 
     const polygonVertexCount = (insidePoints.length + outsidePoints.length) / 2;
@@ -1179,10 +1186,8 @@ function convertPolylineToTriangulatedPolygon(polyline, opts) {
 
     let offset = 0;
     const outsidePointCount = outsidePoints.length / 2;
-    for (let i = 0; i < outsidePointCount; i++) {
-        const tmp = (outsidePointCount - 1 - i) * 2;
-        polygonVertices[offset++] = outsidePoints[tmp];
-        polygonVertices[offset++] = outsidePoints[tmp + 1];
+    for (let i = 0; i < outsidePoints.length; i++) {
+        polygonVertices[offset++] = outsidePoints[i];
     }
     for (let i = 0; i < insidePoints.length; i++) {
         polygonVertices[offset++] = insidePoints[i];
@@ -1195,15 +1200,25 @@ function convertPolylineToTriangulatedPolygon(polyline, opts) {
     let off = 0;
     for (let i = 0; i < pointCount - 1; i++) {
         const i2 = i + 1;
-        indices[off++] = outsidePointCount - outsideIndicesMap[i] - 1;
-        indices[off++] = outsidePointCount - outsideIndicesMap[i2] - 1;
-        indices[off++] = insideIndicesMap[i2] + outsidePointCount;
+        indices[off++] = outsidePointCount - 1 - outsideIndicesMap[i];
+        indices[off++] = outsidePointCount - 1 - outsideIndicesMap[i] - 1;
+        indices[off++] = insideIndicesMap[i] + 1 + outsidePointCount;
 
-        indices[off++] = outsidePointCount - outsideIndicesMap[i] - 1;
-        indices[off++] = insideIndicesMap[i2] + outsidePointCount;
+        indices[off++] = outsidePointCount - 1 - outsideIndicesMap[i];
+        indices[off++] = insideIndicesMap[i] + 1 + outsidePointCount;
         indices[off++] = insideIndicesMap[i] + outsidePointCount;
+
+        if (insideIndicesMap[i2] - insideIndicesMap[i] === 2) {
+            indices[off++] = insideIndicesMap[i] + 2 + outsidePointCount;
+            indices[off++] = insideIndicesMap[i] + 1 + outsidePointCount;
+            indices[off++] = outsidePointCount - outsideIndicesMap[i2] - 1;
+        }
+        else if (outsideIndicesMap[i2] - outsideIndicesMap[i] === 2) {
+            indices[off++] = insideIndicesMap[i2] + outsidePointCount;
+            indices[off++] = outsidePointCount - 1 - (outsideIndicesMap[i] + 1);
+            indices[off++] = outsidePointCount - 1 - (outsideIndicesMap[i] + 2);
+        }
     }
-    // const indices = triangulate(polygonVertices, [], 2);
 
     const topVertices = opts.bevelSize > 0
         ? offsetPolygon(polygonVertices, [], opts.bevelSize, null, true) : polygonVertices;
@@ -1220,7 +1235,6 @@ function convertPolylineToTriangulatedPolygon(polyline, opts) {
     //     ctx.lineTo(polygonVertices[i++], polygonVertices[i++]);
     // }
     // ctx.stroke();
-
 
     return {
         vertices: polygonVertices,
@@ -1240,11 +1254,15 @@ function convertPolylineToTriangulatedPolygon(polyline, opts) {
  * @param {boolean} [opts.smoothSide = false]
  * @param {boolean} [opts.smoothBevel = false]
  * @param {boolean} [opts.lineWidth = 1]
+ * @param {boolean} [opts.miterLimit = 2]
  */
 function extrudePolyline(polylines, opts) {
     normalizeOpts(opts);
     if (opts.lineWidth == null) {
         opts.lineWidth = 1;
+    }
+    if (opts.miterLimit == null) {
+        opts.miterLimit = 1;
     }
     const preparedData = [];
     // Extrude polyline to polygon
