@@ -169,15 +169,16 @@ function addExtrudeSide(
                         k === 0 ? slerp(v, v0, v1, t)
                             : slerp(v, v1, v2, t);
 
-                        // l is always larger than bevelSize.
-                        // PENDING not use linear lerp
-                        const t2 = 1 - Math.cos(t * Math.PI / 2);
-                        const t3 = 1 - Math.cos((1 - t) * Math.PI / 2);
-                        const l2 = (l - bevelSize) * (k === 0 ? t2 : t3) + bevelSize;
+                        const t2 = k === 0  ? t : 1 - t;
+                        const a = bevelSize * Math.sin(t2 * Math.PI / 2);
+                        const b = l * Math.cos(t2 * Math.PI / 2);
 
-                        out.position[cursors.vertex * 3] = v[0] * l2 + topVertices[idx];
-                        out.position[cursors.vertex * 3 + 1] = v[1] * l2 + topVertices[idx + 1];
-                        out.position[cursors.vertex * 3 + 2] = v[2] * l2 + z;
+                        // ellipse radius
+                        const r = bevelSize * l / Math.sqrt(a * a + b * b);
+
+                        out.position[cursors.vertex * 3] = v[0] * r + topVertices[idx];
+                        out.position[cursors.vertex * 3 + 1] = v[1] * r + topVertices[idx + 1];
+                        out.position[cursors.vertex * 3 + 2] = v[2] * r + z;
                         cursors.vertex++;
                     }
 
