@@ -788,7 +788,6 @@ function innerOffsetPolygon(
         v2Normalize(v2, v2);
 
         checkMiterLimit && (indicesMap[i] = outOff);
-        // PENDING Why using sub will lost the direction info.
         if (!close && i === start) {
             v[0] = v2[1];
             v[1] = -v2[0];
@@ -806,6 +805,7 @@ function innerOffsetPolygon(
             outOff++;
         }
         else {
+            // PENDING Why using sub will lost the direction info.
             v2Add(v, v2, v1);
             const tmp = v[1];
             v[1] = -v[0];
@@ -833,9 +833,6 @@ function innerOffsetPolygon(
                 outOff++;
             }
             else {
-                if (x2 + v[0] * miter < -100) {
-                    debugger;
-                }
                 out[outOff * 2] = x2 + v[0] * miter;
                 out[outOff * 2 + 1] = y2 + v[1] * miter;
                 outOff++;
@@ -1173,12 +1170,13 @@ function convertPolylineToTriangulatedPolygon(polyline, opts) {
 
     const insidePoints = [];
     const outsidePoints = [];
+    const miterLimit = opts.miterLimit;
     const outsideIndicesMap = innerOffsetPolygon(
-        points, outsidePoints, 0, pointCount, 0, -lineWidth / 2, opts.miterLimit, false
+        points, outsidePoints, 0, pointCount, 0, -lineWidth / 2, miterLimit, false
     );
     reversePoints(points, 2, 0, pointCount);
     const insideIndicesMap = innerOffsetPolygon(
-        points, insidePoints, 0, pointCount, 0, -lineWidth / 2, opts.miterLimit, false
+        points, insidePoints, 0, pointCount, 0, -lineWidth / 2, miterLimit, false
     );
 
     const polygonVertexCount = (insidePoints.length + outsidePoints.length) / 2;
@@ -1222,19 +1220,6 @@ function convertPolylineToTriangulatedPolygon(polyline, opts) {
 
     const topVertices = opts.bevelSize > 0
         ? offsetPolygon(polygonVertices, [], opts.bevelSize, null, true) : polygonVertices;
-
-    // const debugCanvas = document.createElement('canvas');
-    // const ctx = debugCanvas.getContext('2d');
-    // debugCanvas.style.cssText = 'position:absolute;left:0;bottom:0;z-index:100';
-    // debugCanvas.width = debugCanvas.height = 400;
-    // document.body.appendChild(debugCanvas);
-    // ctx.beginPath();
-    // ctx.translate(100, 100);
-    // ctx.scale(4, 4);
-    // for (let i = 0; i < polygonVertices.length;) {
-    //     ctx.lineTo(polygonVertices[i++], polygonVertices[i++]);
-    // }
-    // ctx.stroke();
 
     return {
         vertices: polygonVertices,
