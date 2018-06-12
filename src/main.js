@@ -1,5 +1,7 @@
 import earcut from 'earcut';
-import {slerp, scale, normalize, v2Normalize, v2Dot, v2Add, area} from './math';
+import {
+    slerp, v2Normalize, v2Dot, v2Add, area
+} from './math';
 
 export function triangulate(vertices, holes, dimensions=2) {
     return earcut(vertices, holes, dimensions);
@@ -142,7 +144,7 @@ const quadToTriangle = [
 
 // Add side vertices and indices. Include bevel.
 function addExtrudeSide(
-    out, vertices, topVertices, depth, start, end,
+    out, {vertices, topVertices, depth, rect}, start, end,
     cursors, opts
 ) {
     const ringVertexCount = end - start;
@@ -153,6 +155,8 @@ function addExtrudeSide(
     const bevelSize = opts.bevelSize;
     const bevelSegments = opts.bevelSegments;
     const vertexOffset = cursors.vertex;
+    const size = Math.max(rect.width, rect.height);
+
     // Side vertices
     if (bevelSize > 0) {
 
@@ -162,9 +166,13 @@ function addExtrudeSide(
         const v = [];
 
         let ringCount = 0;
+        let vLen = new Float32Array(ringVertexCount);
         for (let k = 0; k < 2; k++) {
             const z = (k === 0 ? (depth - bevelSize) : bevelSize);
             for (let s = 0; s <= bevelSegments * splitBevel; s++) {
+                let uLen = 0;
+                let prevX;
+                let prevY;
                 for (let i = 0; i < ringVertexCount; i++) {
 
                     for (let j = 0; j < splitSide; j++) {
@@ -188,9 +196,34 @@ function addExtrudeSide(
                         // ellipse radius
                         const r = bevelSize * l / Math.sqrt(a * a + b * b);
 
-                        out.position[cursors.vertex * 3] = v[0] * r + topVertices[idx];
-                        out.position[cursors.vertex * 3 + 1] = v[1] * r + topVertices[idx + 1];
-                        out.position[cursors.vertex * 3 + 2] = v[2] * r + z;
+                        const x = v[0] * r + topVertices[idx];
+                        const y = v[1] * r + topVertices[idx + 1];
+                        const zz = v[2] * r + z;
+                        out.position[cursors.vertex * 3] = x;
+                        out.position[cursors.vertex * 3 + 1] = y;
+                        out.position[cursors.vertex * 3 + 2] = zz;
+
+                        // TODO Cache and optimize
+                        if (i > 0 || j > 0) {
+                            uLen += Math.sqrt((prevX - x) * (prevX - x) + (prevY - y) * (prevY - y));
+                        }
+                        if (s > 0 || k > 0) {
+                            let tmp = (cursors.vertex - splitRingVertexCount) * 3;
+                            let prevX2 = out.position[tmp];
+                            let prevY2 = out.position[tmp + 1];
+                            let prevZ2 = out.position[tmp + 2];
+
+                            vLen[i] += Math.sqrt(
+                                (prevX2 - x) * (prevX2 - x)
+                                + (prevY2 - y) * (prevY2 - y)
+                                + (prevZ2 - zz) * (prevZ2 - zz)
+                            );
+                        }
+                        out.uv[cursors.vertex * 2] = uLen / size;
+                        out.uv[cursors.vertex * 2 + 1] = vLen[i] / size;
+
+                        prevX = x;
+                        prevY = y;
                         cursors.vertex++;
                     }
 
@@ -210,12 +243,25 @@ function addExtrudeSide(
     else {
         for (let k = 0; k < 2; k++) {
             const z = k === 0 ? depth - bevelSize : bevelSize;
+            let uLen = 0;
+            let prevX;
+            let prevY;
             for (let i = 0; i < ringVertexCount; i++) {
                 for (let m = 0; m < splitSide; m++) {
                     const idx = ((i + m) % ringVertexCount + start) * 2;
-                    out.position[cursors.vertex * 3] = vertices[idx];
-                    out.position[cursors.vertex * 3 + 1] = vertices[idx + 1];
+                    const x = vertices[idx];
+                    const y = vertices[idx + 1];
+                    out.position[cursors.vertex * 3] = x;
+                    out.position[cursors.vertex * 3 + 1] = y;
                     out.position[cursors.vertex * 3 + 2] = z;
+                    if (i > 0 || m > 0) {
+                        uLen += Math.sqrt((prevX - x) * (prevX - x) + (prevY - y) * (prevY - y));
+                    }
+                    out.uv[cursors.vertex * 2] = uLen / size;
+                    out.uv[cursors.vertex * 2 + 1] = z / size;
+                    prevX = x;
+                    prevY = y;
+
                     cursors.vertex++;
                 }
             }
@@ -232,8 +278,8 @@ function addExtrudeSide(
     }
 }
 
-function addTopAndBottom({indices, vertices, topVertices, depth}, out, cursors, opts) {
-    if (vertices.length <= 2) {
+function addTopAndBottom({indices, vertices, topVertices, rect}, out, cursors, opts) {
+    if (vertices.length <= 4) {
         return;
     }
 
@@ -243,26 +289,28 @@ function addTopAndBottom({indices, vertices, topVertices, depth}, out, cursors, 
     for (let i = 0; i < indicesLen; i++) {
         out.indices[cursors.index++] = vertexOffset + indices[i];
     }
-    // Top vertices
-    for (let i = 0; i < topVertices.length; i += 2) {
-        out.position[cursors.vertex * 3] = topVertices[i];
-        out.position[cursors.vertex * 3 + 1] = topVertices[i + 1];
-        out.position[cursors.vertex * 3 + 2] = depth;
-        cursors.vertex++;
-    }
+    const size = Math.max(rect.width, rect.height);
+    const depth = opts.depth;
+    // Top and bottom vertices
+    for (let k = 0; k < 2; k++) {
+        for (let i = 0; i < topVertices.length; i += 2) {
+            const x = topVertices[i];
+            const y = topVertices[i + 1];
+            out.position[cursors.vertex * 3] = x;
+            out.position[cursors.vertex * 3 + 1] = y;
+            out.position[cursors.vertex * 3 + 2] = (1 - k) * depth;
 
-    // Bottom indices
-    for (let i = 0; i < indicesLen; i += 3) {
-        for (let k = 0; k < 3; k++) {
-            out.indices[cursors.index++] = cursors.vertex + indices[i + 2 - k];
+            out.uv[cursors.vertex * 2] = (x - rect.x) / size;
+            out.uv[cursors.vertex * 2 + 1] = (y - rect.y) / size;
+            cursors.vertex++;
         }
     }
-    // Bottom vertices
-    for (let i = 0; i < topVertices.length; i += 2) {
-        out.position[cursors.vertex * 3] = topVertices[i];
-        out.position[cursors.vertex * 3 + 1] = topVertices[i + 1];
-        out.position[cursors.vertex * 3 + 2] = 0;
-        cursors.vertex++;
+    // Bottom indices
+    const vertexCount = vertices.length / 2;
+    for (let i = 0; i < indicesLen; i += 3) {
+        for (let k = 0; k < 3; k++) {
+            out.indices[cursors.index++] = vertexOffset + vertexCount + indices[i + 2 - k];
+        }
     }
 }
 
@@ -280,6 +328,35 @@ function normalizeOpts(opts) {
         opts.bevelSegments = 0;
     }
     opts.bevelSegments = Math.round(opts.bevelSegments);
+
+    const boundingRect = opts.boundingRect;
+    opts.translate = opts.translate || [0, 0];
+    opts.scale = opts.scale || [1, 1];
+    if (opts.transformTo) {
+        const targetWidth = opts.transformTo.width;
+        const targetHeight = opts.transformTo.height;
+        if (targetWidth == null) {
+            if (targetHeight != null) {
+                targetWidth = targetHeight / boundingRect.height * boundingRect.width;
+            }
+            else {
+                targetWidth = boundingRect.width;
+                targetHeight = boundingRect.height;
+            }
+        }
+        else if (targetHeight == null) {
+            targetHeight = targetWidth / boundingRect.width * boundingRect.height;
+        }
+        opts.scale = [
+            targetWidth / boundingRect.width,
+            targetHeight / boundingRect.height
+        ];
+        opts.translate = [
+            (opts.transformTo.x - boundingRect.x) * opts.scale[0],
+            (opts.transformTo.y - boundingRect.y) * opts.scale[1]
+        ];
+    }
+
 }
 
 function convertToClockwise(vertices, holes) {
@@ -344,78 +421,47 @@ function innerExtrudeTriangulatedPolygon(preparedData, opts) {
     }
 
     for (let d = 0; d < preparedData.length; d++) {
-        const {holes, vertices, topVertices, depth} = preparedData[d];
+        const {holes, vertices} = preparedData[d];
         const topVertexCount = vertices.length / 2;
 
         let start = 0;
         let end = (holes && holes.length) ? holes[0] : topVertexCount;
         // Add exterior
-        addExtrudeSide(data, vertices, topVertices, depth, start, end, cursors, opts);
+        addExtrudeSide(data, preparedData[d], start, end, cursors, opts);
         // Add holes
         if (holes) {
             for (let h = 0; h < holes.length; h++) {
                 start = holes[h];
                 end = holes[h + 1] || topVertexCount;
-                addExtrudeSide(data, vertices, topVertices, depth, start, end, cursors, opts);
+                addExtrudeSide(data, preparedData[d], start, end, cursors, opts);
             }
         }
+    }
 
+    // Wrap uv
+    for (let i = 0; i < data.uv.length; i++) {
+        const val = data.uv[i];
+        if (val > 0 && Math.round(val) === val) {
+            data.uv[i] = 1;
+        }
+        else {
+            data.uv[i] = val % 1;
+        }
     }
 
     return data;
 }
-/**
- *
- * @param {Array} polygons Polygons array that match GeoJSON MultiPolygon geometry.
- * @param {Object} [opts]
- * @param {number|Function} [opts.depth]
- * @param {number} [opts.bevelSize = 0]
- * @param {number} [opts.bevelSegments = 2]
- * @param {boolean} [opts.smoothSide = false]
- * @param {boolean} [opts.smoothBevel = false]
- *
- * @return {Object} {indices, position, uv, normal}
- */
-// TODO Dimensions
-// TODO UV, normal
-// TODO If smooth connection between side and bevel.
-// TODO anticlockwise
-// TODO Ignore bottom, bevel="top"|"bottom"
-export function extrudePolygon(polygons, opts) {
-
-    opts = opts || {};
-    normalizeOpts(opts);
-
-    const preparedData = [];
-    for (let i = 0; i < polygons.length; i++) {
-        const {vertices, holes, dimensions} = earcut.flatten(polygons[i]);
-        convertToClockwise(vertices, holes);
-
-        if (dimensions !== 2) {
-            throw new Error('Only 2D polygon points are supported');
-        }
-        const topVertices = opts.bevelSize > 0
-            ? offsetPolygon(vertices, holes, opts.bevelSize, null, true) : vertices;
-        const indices = triangulate(topVertices, holes, dimensions);
-        preparedData.push({
-            indices,
-            vertices,
-            topVertices,
-            holes,
-            depth: typeof opts.depth === 'function' ? opts.depth(i) : opts.depth
-        });
-    }
-    return innerExtrudeTriangulatedPolygon(preparedData, opts);
-};
 
 function convertPolylineToTriangulatedPolygon(polyline, polylineIdx, opts) {
     const lineWidth = opts.lineWidth;
     // TODO Built indices.
     const pointCount = polyline.length;
     const points = new Float32Array(pointCount * 2);
+    const translate = opts.translate || [0, 0];
+    const scale = opts.scale || [1, 1];
     for (let i = 0, k = 0; i < pointCount; i++) {
-        points[k++] = polyline[i][0];
-        points[k++] = polyline[i][1];
+        points[k++] = polyline[i][0] * scale[0] + translate[0];
+        points[k++] = polyline[i][1] * scale[1] + translate[1];
     }
 
     if (area(points, 0, pointCount) < 0) {
@@ -474,15 +520,93 @@ function convertPolylineToTriangulatedPolygon(polyline, polylineIdx, opts) {
 
     const topVertices = opts.bevelSize > 0
         ? offsetPolygon(polygonVertices, [], opts.bevelSize, null, true) : polygonVertices;
-
+    const boundingRect = opts.boundingRect;
     return {
         vertices: polygonVertices,
         indices,
         topVertices,
+        rect: {
+            x: boundingRect.x * scale[0] + translate[0],
+            y: boundingRect.y * scale[1] + translate[1],
+            width: boundingRect.width * scale[0],
+            height: boundingRect.height * scale[1],
+        },
         depth: typeof opts.depth === 'function' ? opts.depth(polylineIdx) : opts.depth,
         holes: []
     };
 }
+
+/**
+ *
+ * @param {Array} polygons Polygons array that match GeoJSON MultiPolygon geometry.
+ * @param {Object} [opts]
+ * @param {number|Function} [opts.depth]
+ * @param {number} [opts.bevelSize = 0]
+ * @param {number} [opts.bevelSegments = 2]
+ * @param {boolean} [opts.smoothSide = false]
+ * @param {boolean} [opts.smoothBevel = false]
+ * @param {Object} [opts.transformTo] translate and scale will be ignored if transformTo is set
+ * @param {Array} [opts.translate]
+ * @param {Array} [opts.scale]
+ * @param {Object} [opts.boundingRect]
+ *
+ * @return {Object} {indices, position, uv, normal}
+ */
+// TODO Dimensions
+// TODO UV, normal
+// TODO If smooth connection between side and bevel.
+// TODO Ignore bottom, bevel="top"|"bottom"
+export function extrudePolygon(polygons, opts) {
+
+    opts = Object.assign({}, opts);
+
+    const min = [Infinity, Infinity];
+    const max = [-Infinity, -Infinity];
+    for (let i = 0; i < polygons.length; i++) {
+        updateBoundingRect(polygons[i][0], min, max);
+    }
+    opts.boundingRect = opts.boundingRect || {
+        x: min[0], y: min[1], width: max[0] - min[0], height: max[1] - min[1]
+    };
+
+    normalizeOpts(opts);
+
+    const preparedData = [];
+    const translate = opts.translate || [0, 0];
+    const scale = opts.scale || [1, 1];
+    const boundingRect = opts.boundingRect;
+    for (let i = 0; i < polygons.length; i++) {
+        const {vertices, holes, dimensions} = earcut.flatten(polygons[i]);
+
+        for (let k = 0; k < vertices.length;) {
+            vertices[k] = vertices[k++] * scale[0] + translate[0];
+            vertices[k] = vertices[k++] * scale[1] + translate[1];
+        }
+
+        convertToClockwise(vertices, holes);
+
+        if (dimensions !== 2) {
+            throw new Error('Only 2D polygon points are supported');
+        }
+        const topVertices = opts.bevelSize > 0
+            ? offsetPolygon(vertices, holes, opts.bevelSize, null, true) : vertices;
+        const indices = triangulate(topVertices, holes, dimensions);
+        preparedData.push({
+            indices,
+            vertices,
+            topVertices,
+            holes,
+            rect: {
+                x: boundingRect.x * scale[0] + translate[0],
+                y: boundingRect.y * scale[1] + translate[1],
+                width: boundingRect.width * scale[0],
+                height: boundingRect.height * scale[1],
+            },
+            depth: typeof opts.depth === 'function' ? opts.depth(i) : opts.depth
+        });
+    }
+    return innerExtrudeTriangulatedPolygon(preparedData, opts);
+};
 
 /**
  *
@@ -495,16 +619,31 @@ function convertPolylineToTriangulatedPolygon(polyline, polylineIdx, opts) {
  * @param {boolean} [opts.smoothBevel = false]
  * @param {boolean} [opts.lineWidth = 1]
  * @param {boolean} [opts.miterLimit = 2]
- *
+ * @param {Object} [opts.transformTo] translate and scale will be ignored if transformTo is set
+ * @param {Array} [opts.translate]
+ * @param {Array} [opts.scale]
+ * @param {Object} [opts.boundingRect]
  * @return {Object} {indices, position, uv, normal}
  */
 export function extrudePolyline(polylines, opts) {
+
+    opts = Object.assign({}, opts);
+
+    const min = [Infinity, Infinity];
+    const max = [-Infinity, -Infinity];
+    for (let i = 0; i < polylines.length; i++) {
+        updateBoundingRect(polylines[i], min, max);
+    }
+    opts.boundingRect = opts.boundingRect || {
+        x: min[0], y: min[1], width: max[0] - min[0], height: max[1] - min[1]
+    };
+
     normalizeOpts(opts);
     if (opts.lineWidth == null) {
         opts.lineWidth = 1;
     }
     if (opts.miterLimit == null) {
-        opts.miterLimit = 1;
+        opts.miterLimit = 2;
     }
     const preparedData = [];
     // Extrude polyline to polygon
@@ -513,6 +652,15 @@ export function extrudePolyline(polylines, opts) {
     }
 
     return innerExtrudeTriangulatedPolygon(preparedData, opts);
+}
+
+function updateBoundingRect(points, min, max) {
+    for (let i = 0; i < points.length; i++) {
+        min[0] = Math.min(points[i][0], min[0]);
+        min[1] = Math.min(points[i][1], min[1]);
+        max[0] = Math.max(points[i][0], max[0]);
+        max[1] = Math.max(points[i][1], max[1]);
+    }
 }
 
 /**
@@ -527,16 +675,26 @@ export function extrudePolyline(polylines, opts) {
  * @param {boolean} [opts.lineWidth = 1]
  * @param {boolean} [opts.miterLimit = 2]
  * @param {string} [opts.depthProperty='height']
+ * @param {Object} [opts.transformTo] translate and scale will be ignored if transformTo is set
+ * @param {Array} [opts.translate]
+ * @param {Array} [opts.scale]
+ * @param {Object} [opts.boundingRect]
  * @return {Object} {polyline: {indices, position, uv, normal}, polygon: {indices, position, uv, normal}}
  */
 
  // TODO Not merge feature
 export function extrudeGeoJSON(geojson, opts) {
+
+    opts = Object.assign({}, opts);
+
     const polylines = [];
     const polygons = [];
 
     const polylineFeatureIndices = [];
     const polygonFeatureIndices = [];
+
+    const min = [Infinity, Infinity];
+    const max = [-Infinity, -Infinity];
 
     for (let i = 0; i < geojson.features.length; i++) {
         const feature = geojson.features[i];
@@ -546,26 +704,34 @@ export function extrudeGeoJSON(geojson, opts) {
                 case 'LineString':
                     polylines.push(geometry.coordinates);
                     polylineFeatureIndices.push(i);
+                    updateBoundingRect(geometry.coordinates, min, max);
                     break;
                 case 'MultiLineString':
                     for (let k = 0; k < geometry.coordinates.length; k++) {
                         polylines.push(geometry.coordinates[k]);
                         polylineFeatureIndices.push(i);
+                        updateBoundingRect(geometry.coordinates[k], min, max);
                     }
                     break;
                 case 'Polygon':
                     polygons.push(geometry.coordinates);
                     polygonFeatureIndices.push(i);
+                    updateBoundingRect(geometry.coordinates[0], min, max);
                     break;
                 case 'MultiPolygon':
                     for (let k = 0; k < geometry.coordinates.length; k++) {
                         polygons.push(geometry.coordinates[k]);
                         polygonFeatureIndices.push(i);
+                        updateBoundingRect(geometry.coordinates[k][0], min, max);
                     }
                     break;
             }
         }
     }
+
+    opts.boundingRect = opts.boundingRect || {
+        x: min[0], y: min[1], width: max[0] - min[0], height: max[1] - min[1]
+    };
 
     return {
         polyline: extrudePolyline(polylines, Object.assign(opts, {

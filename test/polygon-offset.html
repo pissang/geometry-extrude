@@ -35,15 +35,15 @@
 
         drawPolygon(polygon, '#f00');
 
-        // drawPolygon(
-        //     geometryExtrude.offsetPolygonWithHole(polygon, null, 10, null, true), '#0f0'
-        // );
-        // drawPolygon(
-        //     geometryExtrude.offsetPolygonWithHole(polygon, null, -5, null, true), '#00f'
-        // );
+        drawPolygon(
+            geometryExtrude.offsetPolygon(polygon, null, 10, null, true), '#0f0'
+        );
+        drawPolygon(
+            geometryExtrude.offsetPolygon(polygon, null, -5, null, true), '#00f'
+        );
 
         drawPolygon(
-            geometryExtrude.offsetPolygonWithHole(polygon, null, 20, 1, true), '#000'
+            geometryExtrude.offsetPolygon(polygon, null, 20, 1, true), '#000'
         );
     </script>
 </body>

@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>UV Example</title>
+</head>
+<body>
+    <style>
+        html, body, #main {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            overflow: hidden;
+        }
+    </style>
+    <canvas id="main"></canvas>
+    <script src="../dist/geometry-extrude.js"></script>
+    <script src="./lib/dat.gui.js"></script>
+    <script src="./lib/claygl.js"></script>
+    <script>
+        const uvVs = `
+uniform mat4 worldViewProjection : WORLDVIEWPROJECTION;
+attribute vec3 position: POSITION;
+attribute vec2 texcoord: TEXCOORD_0;
+
+varying vec2 v_Texcoord;
+
+void main() {
+    gl_Position = worldViewProjection * vec4(position, 1.0);
+    v_Texcoord = texcoord;
+}
+        `;
+        const uvFs = `
+varying vec2 v_Texcoord;
+void main() {
+    gl_FragColor = vec4(v_Texcoord, 0.0, 1.0);
+}
+        `;
+        const polygons = [
+            [
+                [
+                    [0, 0], [10, 0], [10, 10], [0, 10]
+                ].reverse(),
+                [
+                    [2, 2], [8, 2], [8, 8], [2, 8]
+                ]
+            ]
+        ];
+
+
+        clay.application.create('#main', {
+
+            autoRender: false,
+
+            graphic: {
+                linear: true,
+                tonemapping: true
+            },
+
+            init(app) {
+                this._camera = app.createCamera([5, 5, 20], [5, 5, 0]);
+
+                const geometry = new clay.Geometry({
+                    dynamic: true
+                });
+
+                const config = {
+                    bevelSize: 0.,
+                    bevelSegments: 2
+                };
+
+                function updateGeometry() {
+                    const result = geometryExtrude.extrudePolygon(polygons, {
+                        depth: 10,
+                        bevelSize: config.bevelSize,
+                        bevelSegments: config.bevelSegments
+                    });
+                    geometry.attributes.position.value = result.position;
+                    geometry.attributes.texcoord0.value = result.uv;
+                    geometry.indices = result.indices;
+                    geometry.dirty();
+
+                    app.render();
+                }
+
+                const mesh = app.createMesh(geometry, {
+                    shader: new clay.Shader(uvVs, uvFs)
+                });
+
+                this._control = new clay.plugin.OrbitControl({
+                    target: this._camera,
+                    domElement: app.container,
+                    timeline: app.timeline
+                });
+
+                this._control.on('update', function () {
+                    app.render();
+                });
+
+                updateGeometry();
+
+                const gui = new dat.GUI();
+                gui.add(config, 'bevelSize', 0, 1).onChange(updateGeometry);
+                gui.add(config, 'bevelSegments', 0, 10).step(1).onChange(updateGeometry);
+
+                updateGeometry();
+            },
+
+            loop() {}
+        });
+    </script>
+</body>
+</html>
