@@ -142,10 +142,9 @@ const quadToTriangle = [
 
 // Add side vertices and indices. Include bevel.
 function addExtrudeSide(
-    out, vertices, topVertices, start, end,
+    out, vertices, topVertices, depth, start, end,
     cursors, opts
 ) {
-    const depth = opts.depth;
     const ringVertexCount = end - start;
     const splitSide = opts.smoothSide ? 1 : 2;
     const splitRingVertexCount = ringVertexCount * splitSide;
@@ -233,8 +232,7 @@ function addExtrudeSide(
     }
 }
 
-function addTopAndBottom({indices, vertices, topVertices}, out, cursors, opts) {
-    const depth = opts.depth;
+function addTopAndBottom({indices, vertices, topVertices, depth}, out, cursors, opts) {
     if (vertices.length <= 2) {
         return;
     }
@@ -346,19 +344,19 @@ function innerExtrudeTriangulatedPolygon(preparedData, opts) {
     }
 
     for (let d = 0; d < preparedData.length; d++) {
-        const {holes, vertices, topVertices} = preparedData[d];
+        const {holes, vertices, topVertices, depth} = preparedData[d];
         const topVertexCount = vertices.length / 2;
 
         let start = 0;
         let end = (holes && holes.length) ? holes[0] : topVertexCount;
         // Add exterior
-        addExtrudeSide(data, vertices, topVertices, start, end, cursors, opts);
+        addExtrudeSide(data, vertices, topVertices, depth, start, end, cursors, opts);
         // Add holes
         if (holes) {
             for (let h = 0; h < holes.length; h++) {
                 start = holes[h];
                 end = holes[h + 1] || topVertexCount;
-                addExtrudeSide(data, vertices, topVertices, start, end, cursors, opts);
+                addExtrudeSide(data, vertices, topVertices, depth, start, end, cursors, opts);
             }
         }
 
@@ -370,11 +368,13 @@ function innerExtrudeTriangulatedPolygon(preparedData, opts) {
  *
  * @param {Array} polygons Polygons array that match GeoJSON MultiPolygon geometry.
  * @param {Object} [opts]
- * @param {number} [opts.depth]
+ * @param {number|Function} [opts.depth]
  * @param {number} [opts.bevelSize = 0]
  * @param {number} [opts.bevelSegments = 2]
  * @param {boolean} [opts.smoothSide = false]
  * @param {boolean} [opts.smoothBevel = false]
+ *
+ * @return {Object} {indices, position, uv, normal}
  */
 // TODO Dimensions
 // TODO UV, normal
@@ -401,13 +401,14 @@ export function extrudePolygon(polygons, opts) {
             indices,
             vertices,
             topVertices,
-            holes
+            holes,
+            depth: typeof opts.depth === 'function' ? opts.depth(i) : opts.depth
         });
     }
     return innerExtrudeTriangulatedPolygon(preparedData, opts);
 };
 
-function convertPolylineToTriangulatedPolygon(polyline, opts) {
+function convertPolylineToTriangulatedPolygon(polyline, polylineIdx, opts) {
     const lineWidth = opts.lineWidth;
     // TODO Built indices.
     const pointCount = polyline.length;
@@ -478,6 +479,7 @@ function convertPolylineToTriangulatedPolygon(polyline, opts) {
         vertices: polygonVertices,
         indices,
         topVertices,
+        depth: typeof opts.depth === 'function' ? opts.depth(polylineIdx) : opts.depth,
         holes: []
     };
 }
@@ -493,6 +495,8 @@ function convertPolylineToTriangulatedPolygon(polyline, opts) {
  * @param {boolean} [opts.smoothBevel = false]
  * @param {boolean} [opts.lineWidth = 1]
  * @param {boolean} [opts.miterLimit = 2]
+ *
+ * @return {Object} {indices, position, uv, normal}
  */
 export function extrudePolyline(polylines, opts) {
     normalizeOpts(opts);
@@ -505,8 +509,84 @@ export function extrudePolyline(polylines, opts) {
     const preparedData = [];
     // Extrude polyline to polygon
     for (let i = 0; i < polylines.length; i++) {
-        preparedData.push(convertPolylineToTriangulatedPolygon(polylines[i], opts));
+        preparedData.push(convertPolylineToTriangulatedPolygon(polylines[i], i, opts));
     }
 
     return innerExtrudeTriangulatedPolygon(preparedData, opts);
+}
+
+/**
+ *
+ * @param {Object} geojson
+ * @param {Object} [opts]
+ * @param {number} [opts.depth]
+ * @param {number} [opts.bevelSize = 0]
+ * @param {number} [opts.bevelSegments = 2]
+ * @param {boolean} [opts.smoothSide = false]
+ * @param {boolean} [opts.smoothBevel = false]
+ * @param {boolean} [opts.lineWidth = 1]
+ * @param {boolean} [opts.miterLimit = 2]
+ * @param {string} [opts.depthProperty='height']
+ * @return {Object} {polyline: {indices, position, uv, normal}, polygon: {indices, position, uv, normal}}
+ */
+
+ // TODO Not merge feature
+export function extrudeGeoJSON(geojson, opts) {
+    const polylines = [];
+    const polygons = [];
+
+    const polylineFeatureIndices = [];
+    const polygonFeatureIndices = [];
+
+    for (let i = 0; i < geojson.features.length; i++) {
+        const feature = geojson.features[i];
+        const geometry = feature.geometry;
+        if (geometry && geometry.coordinates) {
+            switch (geometry.type) {
+                case 'LineString':
+                    polylines.push(geometry.coordinates);
+                    polylineFeatureIndices.push(i);
+                    break;
+                case 'MultiLineString':
+                    for (let k = 0; k < geometry.coordinates.length; k++) {
+                        polylines.push(geometry.coordinates[k]);
+                        polylineFeatureIndices.push(i);
+                    }
+                    break;
+                case 'Polygon':
+                    polygons.push(geometry.coordinates);
+                    polygonFeatureIndices.push(i);
+                    break;
+                case 'MultiPolygon':
+                    for (let k = 0; k < geometry.coordinates.length; k++) {
+                        polygons.push(geometry.coordinates[k]);
+                        polygonFeatureIndices.push(i);
+                    }
+                    break;
+            }
+        }
+    }
+
+    return {
+        polyline: extrudePolyline(polylines, Object.assign(opts, {
+            depth: function (idx) {
+                if (typeof opts.depth === 'function') {
+                    return opts.depth(
+                        geojson.features[polylineFeatureIndices[idx]]
+                    );
+                }
+                return opts.depth;
+            }
+        })),
+        polygon: extrudePolygon(polygons, Object.assign(opts, {
+            depth: function (idx) {
+                if (typeof opts.depth === 'function') {
+                    return opts.depth(
+                        geojson.features[polygonFeatureIndices[idx]]
+                    );
+                }
+                return opts.depth;
+            }
+        }))
+    };
 }
