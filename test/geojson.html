@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="X-UA-Compatible" content="ie=edge">
-    <title>Street Polylines Example</title>
+    <title>GeoJSON Buildings Example</title>
 </head>
 <body>
     <style>
@@ -13,6 +13,9 @@
             height: 100%;
             margin: 0;
             overflow: hidden;
+        }
+        body {
+            background: #a49e9b;
         }
         #thumb {
             position: absolute;
@@ -34,18 +37,7 @@
             bevelSegments: 2,
         };
 
-        function drawThumb(polylines) {
-            const ctx = document.getElementById('thumb').getContext('2d');
-            polylines.forEach(polyline => {
-                ctx.beginPath();
-                polyline.forEach(([x, y]) => {
-                    ctx.lineTo(x, y);
-                });
-                ctx.stroke();
-            });
-        }
-
-        function init(streetPolylines, boxOutline) {
+        function init(buildingsGeojson) {
             clay.application.create('#main', {
 
                 autoRender: false,
@@ -66,7 +58,7 @@
                             screenSpaceAmbientOcclusion: {
                                 enable: true,
                                 intensity: 1.2,
-                                radius: 3
+                                radius: 5
                             },
                             FXAA: {
                                 enable: true
@@ -93,14 +85,9 @@
                         dynamic: true
                     });
 
-                    function updateGeometry(geo, polylines, isPolygon, opts) {
-                        const result = geometryExtrude[isPolygon ? 'extrudePolygon' : 'extrudePolyline'](polylines, Object.assign({
-                            depth: 4,
-                            lineWidth: 0.5,
-                            bevelSize: config.bevelSize,
-                            bevelSegments: config.bevelSegments,
-                            miterLimit: 10
-                        }, opts || {}));
+
+
+                    function setGeometry(geo, result) {
                         geo.attributes.position.value = result.position;
                         geo.attributes.texcoord0.value = result.uv;
                         geo.indices = result.indices;
@@ -111,16 +98,36 @@
                     }
 
                     function updateGeometriesAll(firstTime) {
-                        updateGeometry(geometry, streetPolylines);
-                        updateGeometry(outlineGeometry, [boxOutline], false, {
+                        const result1 = geometryExtrude.extrudeGeoJSON(buildingsGeojson, {
+                            fitRect: { x: 0, y: 0, width: 100 },
+                            depth: feature => {
+                                return feature.properties.height / 10
+                            },
+                            bevelSize: config.bevelSize,
+                            bevelSegments: config.bevelSegments,
+                            miterLimit: 10
+                        });
+                        setGeometry(geometry, result1.polygon);
+                        const corners = [
+                            [0, 0],
+                            [result1.polygon.boundingRect.width, 0],
+                            [result1.polygon.boundingRect.width, result1.polygon.boundingRect.height],
+                            [0, result1.polygon.boundingRect.height],
+                            [0, 0]
+                        ];
+                        const boxOutline = buildOutlinePolygon(corners);
+
+                        const result2 = geometryExtrude.extrudePolyline([boxOutline], {
                             lineWidth: 2,
                             depth: 5,
                             bevelSize: 0.4
                         });
-                        updateGeometry(backGeometry, [[boxOutline]], true, {
+                        setGeometry(outlineGeometry, result2);
+                        const result3 = geometryExtrude.extrudePolygon([[boxOutline]], {
                             depth: 1,
                             bevelSize: 0
                         });
+                        setGeometry(backGeometry, result3);
 
                         if (!firstTime) {
                             advRenderer.render();
@@ -128,7 +135,7 @@
                     }
 
                     const streetMesh = app.createMesh(geometry, {
-                        diffuseMap: './asset/cream-paper-subtle-pattern.jpg',
+                        diffuseMap: './asset/woods.jpg',
                         uvRepeat: [4, 4],
                         metalness: 0,
                         roughness: 0.2,
@@ -194,45 +201,10 @@
             return corners;
         }
 
-        fetch('./asset/street.geojson')
+        fetch('./asset/buildings-ny.geojson')
             .then(result => result.json())
             .then(geojson => {
-                let minX = Infinity;
-                let maxX = -Infinity;
-                let minY = Infinity;
-                let maxY = -Infinity;
-                const polylines = geojson.features.filter(feature => feature.geometry).map(feature => {
-                    for (let i = 0; i < feature.geometry.coordinates.length; i++) {
-                        const x = feature.geometry.coordinates[i][0];
-                        const y = feature.geometry.coordinates[i][1];
-                        minX = Math.min(minX, x);
-                        minY = Math.min(minY, y);
-                        maxX = Math.max(maxX, x);
-                        maxY = Math.max(maxY, y);
-                    }
-                    return feature.geometry.coordinates;
-                });
-                const scale = 100 / Math.min(maxX - minX, maxY - minY);
-                polylines.forEach(polyline => {
-                    for (let i = 0; i < polyline.length; i++) {
-                        polyline[i][0] -= minX;
-                        polyline[i][1] -= minY;
-                        polyline[i][0] *= scale;
-                        polyline[i][1] *= scale;
-                    }
-                });
-
-                const corners = [
-                    [0, 0],
-                    [(maxX - minX) * scale, 0],
-                    [(maxX - minX) * scale, (maxY - minY) * scale],
-                    [0, (maxY - minY) * scale],
-                    [0, 0]
-                ];
-
-                init(polylines, buildOutlinePolygon(corners));
-
-                drawThumb(polylines);
+                init(geojson);
             });
     </script>
 </body>

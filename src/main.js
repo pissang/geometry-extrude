@@ -152,7 +152,7 @@ function addExtrudeSide(
     const splitRingVertexCount = ringVertexCount * splitSide;
 
     const splitBevel = opts.smoothBevel ? 1 : 2;
-    const bevelSize = opts.bevelSize;
+    const bevelSize = Math.min(depth / 2, opts.bevelSize);;
     const bevelSegments = opts.bevelSegments;
     const vertexOffset = cursors.vertex;
     const size = Math.max(rect.width, rect.height);
@@ -278,7 +278,7 @@ function addExtrudeSide(
     }
 }
 
-function addTopAndBottom({indices, vertices, topVertices, rect}, out, cursors, opts) {
+function addTopAndBottom({indices, vertices, topVertices, rect, depth}, out, cursors, opts) {
     if (vertices.length <= 4) {
         return;
     }
@@ -290,7 +290,6 @@ function addTopAndBottom({indices, vertices, topVertices, rect}, out, cursors, o
         out.indices[cursors.index++] = vertexOffset + indices[i];
     }
     const size = Math.max(rect.width, rect.height);
-    const depth = opts.depth;
     // Top and bottom vertices
     for (let k = 0; k < 2; k++) {
         for (let i = 0; i < topVertices.length; i += 2) {
@@ -323,7 +322,9 @@ function normalizeOpts(opts) {
     opts.smoothBevel = opts.smoothBevel || false;
 
     // Normalize bevel options.
-    opts.bevelSize = Math.min(!(opts.bevelSegments > 0) ? 0 : opts.bevelSize, opts.depth / 2);
+    if (typeof opts.depth === 'number') {
+        opts.bevelSize = Math.min(!(opts.bevelSegments > 0) ? 0 : opts.bevelSize, opts.depth / 2);
+    }
     if (!(opts.bevelSize > 0)) {
         opts.bevelSegments = 0;
     }
@@ -332,9 +333,9 @@ function normalizeOpts(opts) {
     const boundingRect = opts.boundingRect;
     opts.translate = opts.translate || [0, 0];
     opts.scale = opts.scale || [1, 1];
-    if (opts.transformTo) {
-        const targetWidth = opts.transformTo.width;
-        const targetHeight = opts.transformTo.height;
+    if (opts.fitRect) {
+        let targetWidth = opts.fitRect.width;
+        let targetHeight = opts.fitRect.height;
         if (targetWidth == null) {
             if (targetHeight != null) {
                 targetWidth = targetHeight / boundingRect.height * boundingRect.width;
@@ -352,8 +353,8 @@ function normalizeOpts(opts) {
             targetHeight / boundingRect.height
         ];
         opts.translate = [
-            (opts.transformTo.x - boundingRect.x) * opts.scale[0],
-            (opts.transformTo.y - boundingRect.y) * opts.scale[1]
+            (opts.fitRect.x - boundingRect.x) * opts.scale[0],
+            (opts.fitRect.y - boundingRect.y) * opts.scale[1]
         ];
     }
 
@@ -448,6 +449,9 @@ function innerExtrudeTriangulatedPolygon(preparedData, opts) {
             data.uv[i] = val % 1;
         }
     }
+
+    // PENDING
+    data.boundingRect = preparedData[0] && preparedData[0].rect;
 
     return data;
 }
@@ -545,7 +549,7 @@ function convertPolylineToTriangulatedPolygon(polyline, polylineIdx, opts) {
  * @param {number} [opts.bevelSegments = 2]
  * @param {boolean} [opts.smoothSide = false]
  * @param {boolean} [opts.smoothBevel = false]
- * @param {Object} [opts.transformTo] translate and scale will be ignored if transformTo is set
+ * @param {Object} [opts.fitRect] translate and scale will be ignored if fitRect is set
  * @param {Array} [opts.translate]
  * @param {Array} [opts.scale]
  * @param {Object} [opts.boundingRect]
@@ -619,7 +623,7 @@ export function extrudePolygon(polygons, opts) {
  * @param {boolean} [opts.smoothBevel = false]
  * @param {boolean} [opts.lineWidth = 1]
  * @param {boolean} [opts.miterLimit = 2]
- * @param {Object} [opts.transformTo] translate and scale will be ignored if transformTo is set
+ * @param {Object} [opts.fitRect] translate and scale will be ignored if fitRect is set
  * @param {Array} [opts.translate]
  * @param {Array} [opts.scale]
  * @param {Object} [opts.boundingRect]
@@ -675,7 +679,7 @@ function updateBoundingRect(points, min, max) {
  * @param {boolean} [opts.lineWidth = 1]
  * @param {boolean} [opts.miterLimit = 2]
  * @param {string} [opts.depthProperty='height']
- * @param {Object} [opts.transformTo] translate and scale will be ignored if transformTo is set
+ * @param {Object} [opts.fitRect] translate and scale will be ignored if fitRect is set
  * @param {Array} [opts.translate]
  * @param {Array} [opts.scale]
  * @param {Object} [opts.boundingRect]
@@ -733,25 +737,26 @@ export function extrudeGeoJSON(geojson, opts) {
         x: min[0], y: min[1], width: max[0] - min[0], height: max[1] - min[1]
     };
 
+    const originalDepth = opts.depth;
     return {
         polyline: extrudePolyline(polylines, Object.assign(opts, {
             depth: function (idx) {
-                if (typeof opts.depth === 'function') {
-                    return opts.depth(
+                if (typeof originalDepth === 'function') {
+                    return originalDepth(
                         geojson.features[polylineFeatureIndices[idx]]
                     );
                 }
-                return opts.depth;
+                return originalDepth;
             }
         })),
         polygon: extrudePolygon(polygons, Object.assign(opts, {
             depth: function (idx) {
-                if (typeof opts.depth === 'function') {
-                    return opts.depth(
+                if (typeof originalDepth === 'function') {
+                    return originalDepth(
                         geojson.features[polygonFeatureIndices[idx]]
                     );
                 }
-                return opts.depth;
+                return originalDepth;
             }
         }))
     };
