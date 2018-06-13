@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>Simple Extrude Example</title>
+</head>
+<body>
+    <style>
+        html, body, #main {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            overflow: hidden;
+        }
+        #thumb {
+            position: absolute;
+            z-index: 1;
+            left: 0;
+            bottom: 0;
+        }
+    </style>
+    <canvas id="main"></canvas>
+    <canvas id="thumb" width="400" height="400"></canvas>
+    <script src="../dist/geometry-extrude.js"></script>
+    <script src="./lib/dat.gui.js"></script>
+    <script src="./lib/claygl.js"></script>
+    <script src="./lib/claygl-advanced-renderer.js"></script>
+    <script>
+
+        const config = {
+            bevelSize: 0,
+            bevelSegments: 2,
+        };
+
+        function drawThumb(polylines) {
+            const ctx = document.getElementById('thumb').getContext('2d');
+            polylines.forEach(polyline => {
+                ctx.beginPath();
+                polyline.forEach(([x, y]) => {
+                    ctx.lineTo(x, y);
+                });
+                ctx.stroke();
+            });
+        }
+
+        function init(streetPolylines, boxOutline) {
+            clay.application.create('#main', {
+
+                autoRender: false,
+
+                init(app) {
+
+                    const advRenderer = this._advancedRenderer = new ClayAdvancedRenderer(app.renderer, app.scene, app.timeline, {
+                        shadow: true,
+                        temporalSuperSampling: {
+                            enable: true,
+                            dynamic: false
+                        },
+                        postEffect: {
+                            enable: true,
+                            bloom: {
+                                enable: false
+                            },
+                            screenSpaceAmbientOcclusion: {
+                                enable: true,
+                                intensity: 1.2,
+                                radius: 3
+                            },
+                            FXAA: {
+                                enable: true
+                            }
+                        }
+                    });
+
+                    const light = app.createDirectionalLight([-1, -2, -1], '#fff');
+                    light.shadowResolution = 2048;
+                    light.shadowBias = 0.005;
+
+                    app.createAmbientCubemapLight('./asset/pisa.hdr', 1, 0.3).then(() => {
+                        advRenderer.render();
+                    });
+
+                    const geometry = new clay.Geometry({
+                        dynamic: true
+                    });
+
+                    const outlineGeometry = new clay.Geometry({
+                        dynamic: true
+                    });
+                    const backGeometry = new clay.Geometry({
+                        dynamic: true
+                    });
+
+                    function updateGeometry(geo, polylines, isPolygon, opts) {
+                        const result = geometryExtrude[isPolygon ? 'extrudePolygon' : 'extrudePolyline'](polylines, Object.assign({
+                            depth: 4,
+                            lineWidth: 0.5,
+                            bevelSize: config.bevelSize,
+                            bevelSegments: config.bevelSegments,
+                            miterLimit: 10
+                        }, opts || {}));
+                        geo.attributes.position.value = result.position;
+                        geo.attributes.texcoord0.value = result.uv;
+                        geo.indices = result.indices;
+                        geo.generateVertexNormals();
+                        geo.generateTangents();
+                        geo.updateBoundingBox();
+                        geo.dirty();
+                    }
+
+                    function updateGeometriesAll(firstTime) {
+                        updateGeometry(geometry, streetPolylines);
+                        updateGeometry(outlineGeometry, [boxOutline], false, {
+                            lineWidth: 2,
+                            depth: 5,
+                            bevelSize: 0.4
+                        });
+                        updateGeometry(backGeometry, [[boxOutline]], true, {
+                            depth: 1,
+                            bevelSize: 0
+                        });
+
+                        if (!firstTime) {
+                            advRenderer.render();
+                        }
+                    }
+
+                    const streetMesh = app.createMesh(geometry, {
+                        diffuseMap: './asset/cream-paper-subtle-pattern.jpg',
+                        uvRepeat: [4, 4],
+                        metalness: 0,
+                        roughness: 0.2,
+                        color: '#fff'
+                    });
+                    const outlineMesh = app.createMesh(outlineGeometry, {
+                        color: '#fff',
+                        metalness: 1,
+                        roughness: 0.5
+                    });
+                    const backMesh = app.createMesh(backGeometry, {
+                        diffuseMap: './asset/paper-detail.png',
+                        uvRepeat: [3, 3],
+                        // color: '#559',
+                        roughness: 1
+                    });
+
+                    const plane = app.createPlane({
+                        diffuseMap: './asset/patchy_cement1/patchy_cement1_Base_Color.jpg',
+                        occlusionMap: './asset/patchy_cement1/patchy_cement1_Ambient_Occlusion.jpg',
+                        normalMap: './asset/patchy_cement1/patchy_cement1_Normal.jpg',
+                        roughness: 0.6,
+                        uvRepeat: [10, 10],
+                        textureLoaded: function (textureName, texture) {
+                            texture.anisotropic = 8;
+                        },
+                        texturesReady: function () {
+                            advRenderer.render();
+                        }
+                    });
+                    plane.castShadow = false;
+                    plane.scale.set(300, 300, 1);
+                    plane.position.set(150, 150, 0);
+
+                    const gui = new dat.GUI();
+                    gui.add(config, 'bevelSize', 0, 0.1).onChange(updateGeometriesAll);
+                    gui.add(config, 'bevelSegments', 0, 10).step(1).onChange(updateGeometriesAll);
+
+                    updateGeometriesAll(true);
+                    const center = geometry.boundingBox.min.clone();
+                    center.add(geometry.boundingBox.max).scale(0.5);
+
+                    this._camera = app.createCamera([center.x, center.y, 150], [center.x, center.y, 0]);
+
+                    this._control = new clay.plugin.OrbitControl({
+                        target: this._camera,
+                        domElement: app.container,
+                        timeline: app.timeline,
+                        rotateSensitivity: 2
+                    });
+
+                    this._control.on('update', function () {
+                        advRenderer.render();
+                    });
+
+                },
+
+                loop() {}
+            });
+        }
+
+        function buildOutlinePolygon(corners) {
+            return corners;
+        }
+
+        fetch('./asset/street.geojson')
+            .then(result => result.json())
+            .then(geojson => {
+                let minX = Infinity;
+                let maxX = -Infinity;
+                let minY = Infinity;
+                let maxY = -Infinity;
+                const polylines = geojson.features.filter(feature => feature.geometry).map(feature => {
+                    for (let i = 0; i < feature.geometry.coordinates.length; i++) {
+                        const x = feature.geometry.coordinates[i][0];
+                        const y = feature.geometry.coordinates[i][1];
+                        minX = Math.min(minX, x);
+                        minY = Math.min(minY, y);
+                        maxX = Math.max(maxX, x);
+                        maxY = Math.max(maxY, y);
+                    }
+                    return feature.geometry.coordinates;
+                });
+                const scale = 100 / Math.min(maxX - minX, maxY - minY);
+                polylines.forEach(polyline => {
+                    for (let i = 0; i < polyline.length; i++) {
+                        polyline[i][0] -= minX;
+                        polyline[i][1] -= minY;
+                        polyline[i][0] *= scale;
+                        polyline[i][1] *= scale;
+                    }
+                });
+
+                const corners = [
+                    [0, 0],
+                    [(maxX - minX) * scale, 0],
+                    [(maxX - minX) * scale, (maxY - minY) * scale],
+                    [0, (maxY - minY) * scale],
+                    [0, 0]
+                ];
+
+                init(polylines, buildOutlinePolygon(corners));
+
+                drawThumb(polylines);
+            });
+    </script>
+</body>
+</html>
