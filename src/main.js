@@ -152,7 +152,7 @@ function addExtrudeSide(
     const splitRingVertexCount = ringVertexCount * splitSide;
 
     const splitBevel = opts.smoothBevel ? 1 : 2;
-    const bevelSize = Math.min(depth / 2, opts.bevelSize);;
+    const bevelSize = Math.min(depth / 2, opts.bevelSize);
     const bevelSegments = opts.bevelSegments;
     const vertexOffset = cursors.vertex;
     const size = Math.max(rect.width, rect.height);
@@ -380,12 +380,14 @@ function innerExtrudeTriangulatedPolygon(preparedData, opts) {
     let indexCount = 0;
     let vertexCount = 0;
     for (let p = 0; p < preparedData.length; p++) {
-        const {indices, vertices, holes} = preparedData[p];
+        const {indices, vertices, holes, depth} = preparedData[p];
         const polygonVertexCount = vertices.length / 2;
+        const bevelSize = Math.min(depth / 2, opts.bevelSize);
+        const bevelSegments = !(bevelSize > 0) ? 0 : opts.bevelSegments;
 
         indexCount += indices.length * 2;
         vertexCount += polygonVertexCount * 2;
-        const ringCount = 2 + opts.bevelSegments * 2;
+        const ringCount = 2 + bevelSegments * 2;
 
         let start = 0;
         let end = 0;
@@ -403,7 +405,7 @@ function innerExtrudeTriangulatedPolygon(preparedData, opts) {
             const sideRingVertexCount = (end - start) * (opts.smoothSide ? 1 : 2);
             vertexCount += sideRingVertexCount * ringCount
                 // Double the bevel vertex number if not smooth
-                + (!opts.smoothBevel ? opts.bevelSegments * sideRingVertexCount * 2 : 0);
+                + (!opts.smoothBevel ? bevelSegments * sideRingVertexCount * 2 : 0);
         }
     }
 
@@ -540,6 +542,34 @@ function convertPolylineToTriangulatedPolygon(polyline, polylineIdx, opts) {
     };
 }
 
+function removeClosePoints(polygon, epsilon) {
+    const newPolygon = [];
+    for (let k  = 0; k < polygon.length; k++) {
+        const points = polygon[k];
+        const newPoints = [];
+        const len = points.length;
+        let x1 = points[len - 1][0];
+        let y1 = points[len - 1][1];
+        let dist = 0;
+        for (let i = 0; i < len; i++) {
+            let x2 = points[i][0];
+            let y2 = points[i][1];
+            const dx = x2 - x1;
+            const dy = y2 - y1;
+            dist += Math.sqrt(dx * dx + dy * dy);
+            if (dist > epsilon) {
+                newPoints.push(points[i]);
+                dist = 0;
+            }
+            x1 = x2;
+            y1 = y2;
+        }
+        if (newPoints.length >= 3) {
+            newPolygon.push(newPoints);
+        }
+    }
+    return newPolygon.length > 0 ? newPolygon : null;
+}
 /**
  *
  * @param {Array} polygons Polygons array that match GeoJSON MultiPolygon geometry.
@@ -579,8 +609,22 @@ export function extrudePolygon(polygons, opts) {
     const translate = opts.translate || [0, 0];
     const scale = opts.scale || [1, 1];
     const boundingRect = opts.boundingRect;
+    const transformdRect = {
+        x: boundingRect.x * scale[0] + translate[0],
+        y: boundingRect.y * scale[1] + translate[1],
+        width: boundingRect.width * scale[0],
+        height: boundingRect.height * scale[1],
+    };
+
+    const epsilon = Math.min(
+        boundingRect.width, boundingRect.height
+    ) / 1e5;
     for (let i = 0; i < polygons.length; i++) {
-        const {vertices, holes, dimensions} = earcut.flatten(polygons[i]);
+        const newPolygon = removeClosePoints(polygons[i], epsilon);
+        if (!newPolygon) {
+            continue;
+        }
+        const {vertices, holes, dimensions} = earcut.flatten(newPolygon);
 
         for (let k = 0; k < vertices.length;) {
             vertices[k] = vertices[k++] * scale[0] + translate[0];
@@ -600,12 +644,7 @@ export function extrudePolygon(polygons, opts) {
             vertices,
             topVertices,
             holes,
-            rect: {
-                x: boundingRect.x * scale[0] + translate[0],
-                y: boundingRect.y * scale[1] + translate[1],
-                width: boundingRect.width * scale[0],
-                height: boundingRect.height * scale[1],
-            },
+            rect: transformdRect,
             depth: typeof opts.depth === 'function' ? opts.depth(i) : opts.depth
         });
     }
