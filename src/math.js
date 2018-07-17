@@ -72,6 +72,34 @@ export function v2Sub(out, v1, v2) {
     return out;
 }
 
+export function v3Sub(out, v1, v2) {
+    out[0] = v1[0] - v2[0];
+    out[1] = v1[1] - v2[1];
+    out[2] = v1[2] - v2[2];
+    return out;
+}
+
+export function v3Normalize(out, v) {
+    const x = v[0];
+    const y = v[1];
+    const z = v[2];
+    const d = Math.sqrt(x * x + y * y + z * z);
+    out[0] = x / d;
+    out[1] = y / d;
+    out[2] = z / d;
+    return out;
+}
+
+export function v3Cross(out, v1, v2) {
+    var ax = v1[0], ay = v1[1], az = v1[2],
+        bx = v2[0], by = v2[1], bz = v2[2];
+
+    out[0] = ay * bz - az * by;
+    out[1] = az * bx - ax * bz;
+    out[2] = ax * by - ay * bx;
+    return out;
+}
+
 const rel = [];
 // start and end must be normalized
 export function slerp(out, start, end, t) {
