@@ -94,17 +94,17 @@
                     });
 
                     function updateGeometry(geo, polylines, isPolygon, opts) {
-                        const result = geometryExtrude[isPolygon ? 'extrudePolygon' : 'extrudePolyline'](polylines, Object.assign({
+                        const {position, uv, indices, normal} = geometryExtrude[isPolygon ? 'extrudePolygon' : 'extrudePolyline'](polylines, Object.assign({
                             depth: 4,
                             lineWidth: 0.5,
                             bevelSize: config.bevelSize,
                             bevelSegments: config.bevelSegments,
                             miterLimit: 10
                         }, opts || {}));
-                        geo.attributes.position.value = result.position;
-                        geo.attributes.texcoord0.value = result.uv;
-                        geo.indices = result.indices;
-                        geo.generateVertexNormals();
+                        geo.attributes.position.value = position;
+                        geo.attributes.texcoord0.value = uv;
+                        geo.attributes.normal.value = normal;
+                        geo.indices = indices;
                         geo.generateTangents();
                         geo.updateBoundingBox();
                         geo.dirty();

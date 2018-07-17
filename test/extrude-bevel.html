@@ -60,14 +60,13 @@
                 });
 
                 function updateGeometry() {
-                    const result = geometryExtrude.extrudePolygon(polygons, {
+                    const {position, indices} = geometryExtrude.extrudePolygon(polygons, {
                         depth: 2,
                         bevelSize: config.bevelSize,
                         bevelSegments: config.bevelSegments
                     });
-                    console.log(result.indices, result.position);
-                    geometry.attributes.position.value = result.position;
-                    geometry.indices = result.indices;
+                    geometry.attributes.position.value = position;
+                    geometry.indices = indices;
                     geometry.generateVertexNormals();
                     geometry.generateBarycentric();
                     geometry.updateBoundingBox();

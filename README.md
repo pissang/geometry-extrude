@@ -1,6 +1,6 @@
 # Geometry Extrude
 
-A small and fast JavaScript library to extrude 2D polygons and polylines to 3D meshes. It depends on [earcut](https://github.com/mapbox/earcut) to do triangulation.
+A small and fast JavaScript library for extruding 2D polygons and polylines to 3D meshes. It depends on [earcut](https://github.com/mapbox/earcut) to do triangulation.
 
 ## Features
 
@@ -8,9 +8,9 @@ A small and fast JavaScript library to extrude 2D polygons and polylines to 3D m
 
 + Extrude polylines with specific line thickness.
 
-+ Generate position/uv/normal/indices array.
++ Generate `position` / `uv` / `normal` / `indices` TypedArray.
 
-+ Bevel style.
++ Support bevel style.
 
 ## Basic Usage
 

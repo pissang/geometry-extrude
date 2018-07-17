@@ -85,8 +85,6 @@
                         dynamic: true
                     });
 
-
-
                     function setGeometry(geo, result) {
                         geo.attributes.position.value = result.position;
                         geo.attributes.texcoord0.value = result.uv;
@@ -101,7 +99,7 @@
                         const result1 = geometryExtrude.extrudeGeoJSON(buildingsGeojson, {
                             fitRect: { x: 0, y: 0, width: 100 },
                             depth: feature => {
-                                return feature.properties.height / 10
+                                return feature.properties.height / 10 + 1;
                             },
                             bevelSize: config.bevelSize,
                             bevelSegments: config.bevelSegments,
@@ -171,7 +169,7 @@
                     plane.position.set(150, 150, 0);
 
                     const gui = new dat.GUI();
-                    gui.add(config, 'bevelSize', 0, 0.1).onChange(updateGeometriesAll);
+                    gui.add(config, 'bevelSize', 0, 2).onChange(updateGeometriesAll);
                     gui.add(config, 'bevelSegments', 0, 10).step(1).onChange(updateGeometriesAll);
 
                     updateGeometriesAll(true);
@@ -204,6 +202,7 @@
         fetch('./asset/buildings-ny.geojson')
             .then(result => result.json())
             .then(geojson => {
+                // geojson.features = geojson.features.slice(0, 10);
                 init(geojson);
             });
     </script>

@@ -67,15 +67,15 @@ void main() {
                 };
 
                 function updateGeometry() {
-                    const result = geometryExtrude.extrudePolygon(polygons, {
+                    const {position, indices, normal} = geometryExtrude.extrudePolygon(polygons, {
                         depth: 2,
                         bevelSize: 0.7,
                         smoothBevel: config.smoothBevel,
                         smoothSide: config.smoothSide
                     });
-                    geometry.attributes.position.value = result.position;
-                    geometry.indices = result.indices;
-                    geometry.generateVertexNormals();
+                    geometry.attributes.position.value = position;
+                    geometry.attributes.normal.value = normal;
+                    geometry.indices = indices;
                     geometry.dirty();
 
                     app.render();

@@ -710,6 +710,34 @@ function v2Add(out, v1, v2) {
 
 
 
+function v3Sub(out, v1, v2) {
+    out[0] = v1[0] - v2[0];
+    out[1] = v1[1] - v2[1];
+    out[2] = v1[2] - v2[2];
+    return out;
+}
+
+function v3Normalize(out, v) {
+    const x = v[0];
+    const y = v[1];
+    const z = v[2];
+    const d = Math.sqrt(x * x + y * y + z * z);
+    out[0] = x / d;
+    out[1] = y / d;
+    out[2] = z / d;
+    return out;
+}
+
+function v3Cross(out, v1, v2) {
+    var ax = v1[0], ay = v1[1], az = v1[2],
+        bx = v2[0], by = v2[1], bz = v2[2];
+
+    out[0] = ay * bz - az * by;
+    out[1] = az * bx - ax * bz;
+    out[2] = ax * by - ay * bx;
+    return out;
+}
+
 const rel = [];
 // start and end must be normalized
 function slerp(out, start, end, t) {
@@ -880,6 +908,121 @@ function reversePoints(points, stride, start, end) {
     return points;
 }
 
+function convertToClockwise(vertices, holes) {
+    let polygonVertexCount = vertices.length / 2;
+    let start = 0;
+    let end = holes && holes.length ? holes[0] : polygonVertexCount;
+    if (area$1(vertices, start, end) > 0) {
+        reversePoints(vertices, 2, start, end);
+    }
+    for (let h = 1; h < (holes ? holes.length : 0) + 1; h++) {
+        start = holes[h - 1];
+        end = holes[h] || polygonVertexCount;
+        if (area$1(vertices, start, end) < 0) {
+            reversePoints(vertices, 2, start, end);
+        }
+    }
+}
+
+function normalizeOpts(opts) {
+
+    opts.depth = opts.depth || 1;
+    opts.bevelSize = opts.bevelSize || 0;
+    opts.bevelSegments = opts.bevelSegments == null ? 2 : opts.bevelSegments;
+    opts.smoothSide = opts.smoothSide || false;
+    opts.smoothBevel = opts.smoothBevel || false;
+
+    // Normalize bevel options.
+    if (typeof opts.depth === 'number') {
+        opts.bevelSize = Math.min(!(opts.bevelSegments > 0) ? 0 : opts.bevelSize, opts.depth / 2);
+    }
+    if (!(opts.bevelSize > 0)) {
+        opts.bevelSegments = 0;
+    }
+    opts.bevelSegments = Math.round(opts.bevelSegments);
+
+    const boundingRect = opts.boundingRect;
+    opts.translate = opts.translate || [0, 0];
+    opts.scale = opts.scale || [1, 1];
+    if (opts.fitRect) {
+        let targetX = opts.fitRect.x == null
+            ? (boundingRect.x || 0)
+            : opts.fitRect.x;
+        let targetY = opts.fitRect.y == null
+            ? (boundingRect.y || 0)
+            : opts.fitRect.y;
+        let targetWidth = opts.fitRect.width;
+        let targetHeight = opts.fitRect.height;
+        if (targetWidth == null) {
+            if (targetHeight != null) {
+                targetWidth = targetHeight / boundingRect.height * boundingRect.width;
+            }
+            else {
+                targetWidth = boundingRect.width;
+                targetHeight = boundingRect.height;
+            }
+        }
+        else if (targetHeight == null) {
+            targetHeight = targetWidth / boundingRect.width * boundingRect.height;
+        }
+        opts.scale = [
+            targetWidth / boundingRect.width,
+            targetHeight / boundingRect.height
+        ];
+        opts.translate = [
+            (targetX - boundingRect.x) * opts.scale[0],
+            (targetY - boundingRect.y) * opts.scale[1]
+        ];
+    }
+}
+
+function generateNormal(indices, position) {
+
+    function v3Set(p, a, b, c) {
+        p[0] = a; p[1] = b; p[2] = c;
+    }
+
+    const p1 = [];
+    const p2 = [];
+    const p3 = [];
+
+    const v21 = [];
+    const v32 = [];
+
+    const n = [];
+
+    const len = indices.length;
+    const normals = new Float32Array(position.length);
+    for (let f = 0; f < len;) {
+        const i1 = indices[f++] * 3;
+        const i2 = indices[f++] * 3;
+        const i3 = indices[f++] * 3;
+
+        v3Set(p1, position[i1], position[i1 + 1], position[i1 + 2]);
+        v3Set(p2, position[i2], position[i2 + 1], position[i2 + 2]);
+        v3Set(p3, position[i3], position[i3 + 1], position[i3 + 2]);
+
+        v3Sub(v21, p1, p2);
+        v3Sub(v32, p2, p3);
+        v3Cross(n, v21, v32);
+        // Already be weighted by the triangle area
+        for (let i = 0; i < 3; i++) {
+            normals[i1 + i] = normals[i1 + i] + n[i];
+            normals[i2 + i] = normals[i2 + i] + n[i];
+            normals[i3 + i] = normals[i3 + i] + n[i];
+        }
+    }
+
+    for (var i = 0; i < normals.length;) {
+        v3Set(n, normals[i], normals[i+1], normals[i+2]);
+        v3Normalize(n, n);
+        normals[i++] = n[0];
+        normals[i++] = n[1];
+        normals[i++] = n[2];
+    }
+
+    return normals;
+}
 // 0,0----1,0
 // 0,1----1,1
 const quadToTriangle = [
@@ -1058,79 +1201,19 @@ function addTopAndBottom({indices, vertices, topVertices, rect, depth}, out, cur
     }
 }
 
-function normalizeOpts(opts) {
-
-    opts.depth = opts.depth || 1;
-    opts.bevelSize = opts.bevelSize || 0;
-    opts.bevelSegments = opts.bevelSegments == null ? 2 : opts.bevelSegments;
-    opts.smoothSide = opts.smoothSide || false;
-    opts.smoothBevel = opts.smoothBevel || false;
-
-    // Normalize bevel options.
-    if (typeof opts.depth === 'number') {
-        opts.bevelSize = Math.min(!(opts.bevelSegments > 0) ? 0 : opts.bevelSize, opts.depth / 2);
-    }
-    if (!(opts.bevelSize > 0)) {
-        opts.bevelSegments = 0;
-    }
-    opts.bevelSegments = Math.round(opts.bevelSegments);
-
-    const boundingRect = opts.boundingRect;
-    opts.translate = opts.translate || [0, 0];
-    opts.scale = opts.scale || [1, 1];
-    if (opts.fitRect) {
-        let targetWidth = opts.fitRect.width;
-        let targetHeight = opts.fitRect.height;
-        if (targetWidth == null) {
-            if (targetHeight != null) {
-                targetWidth = targetHeight / boundingRect.height * boundingRect.width;
-            }
-            else {
-                targetWidth = boundingRect.width;
-                targetHeight = boundingRect.height;
-            }
-        }
-        else if (targetHeight == null) {
-            targetHeight = targetWidth / boundingRect.width * boundingRect.height;
-        }
-        opts.scale = [
-            targetWidth / boundingRect.width,
-            targetHeight / boundingRect.height
-        ];
-        opts.translate = [
-            (opts.fitRect.x - boundingRect.x) * opts.scale[0],
-            (opts.fitRect.y - boundingRect.y) * opts.scale[1]
-        ];
-    }
-
-}
-
-function convertToClockwise(vertices, holes) {
-    let polygonVertexCount = vertices.length / 2;
-    let start = 0;
-    let end = holes && holes.length ? holes[0] : polygonVertexCount;
-    if (area$1(vertices, start, end) > 0) {
-        reversePoints(vertices, 2, start, end);
-    }
-    for (let h = 1; h < (holes ? holes.length : 0) + 1; h++) {
-        start = holes[h - 1];
-        end = holes[h] || polygonVertexCount;
-        if (area$1(vertices, start, end) < 0) {
-            reversePoints(vertices, 2, start, end);
-        }
-    }
-}
 
 function innerExtrudeTriangulatedPolygon(preparedData, opts) {
     let indexCount = 0;
     let vertexCount = 0;
     for (let p = 0; p < preparedData.length; p++) {
-        const {indices, vertices, holes} = preparedData[p];
+        const {indices, vertices, holes, depth} = preparedData[p];
         const polygonVertexCount = vertices.length / 2;
+        const bevelSize = Math.min(depth / 2, opts.bevelSize);
+        const bevelSegments = !(bevelSize > 0) ? 0 : opts.bevelSegments;
 
         indexCount += indices.length * 2;
         vertexCount += polygonVertexCount * 2;
-        const ringCount = 2 + opts.bevelSegments * 2;
+        const ringCount = 2 + bevelSegments * 2;
 
         let start = 0;
         let end = 0;
@@ -1148,7 +1231,7 @@ function innerExtrudeTriangulatedPolygon(preparedData, opts) {
             const sideRingVertexCount = (end - start) * (opts.smoothSide ? 1 : 2);
             vertexCount += sideRingVertexCount * ringCount
                 // Double the bevel vertex number if not smooth
-                + (!opts.smoothBevel ? opts.bevelSegments * sideRingVertexCount * 2 : 0);
+                + (!opts.smoothBevel ? bevelSegments * sideRingVertexCount * 2 : 0);
         }
     }
 
@@ -1195,6 +1278,7 @@ function innerExtrudeTriangulatedPolygon(preparedData, opts) {
         }
     }
 
+    data.normal = generateNormal(data.indices, data.position);
     // PENDING
     data.boundingRect = preparedData[0] && preparedData[0].rect;
 
@@ -1285,6 +1369,34 @@ function convertPolylineToTriangulatedPolygon(polyline, polylineIdx, opts) {
     };
 }
 
+function removeClosePoints(polygon, epsilon) {
+    const newPolygon = [];
+    for (let k  = 0; k < polygon.length; k++) {
+        const points = polygon[k];
+        const newPoints = [];
+        const len = points.length;
+        let x1 = points[len - 1][0];
+        let y1 = points[len - 1][1];
+        let dist = 0;
+        for (let i = 0; i < len; i++) {
+            let x2 = points[i][0];
+            let y2 = points[i][1];
+            const dx = x2 - x1;
+            const dy = y2 - y1;
+            dist += Math.sqrt(dx * dx + dy * dy);
+            if (dist > epsilon) {
+                newPoints.push(points[i]);
+                dist = 0;
+            }
+            x1 = x2;
+            y1 = y2;
+        }
+        if (newPoints.length >= 3) {
+            newPolygon.push(newPoints);
+        }
+    }
+    return newPolygon.length > 0 ? newPolygon : null;
+}
 /**
  *
  * @param {Array} polygons Polygons array that match GeoJSON MultiPolygon geometry.
@@ -1297,9 +1409,8 @@ function convertPolylineToTriangulatedPolygon(polyline, polylineIdx, opts) {
  * @param {Object} [opts.fitRect] translate and scale will be ignored if fitRect is set
  * @param {Array} [opts.translate]
  * @param {Array} [opts.scale]
- * @param {Object} [opts.boundingRect]
  *
- * @return {Object} {indices, position, uv, normal}
+ * @return {Object} {indices, position, uv, normal, boundingRect}
  */
 // TODO Dimensions
 // TODO UV, normal
@@ -1324,8 +1435,22 @@ function extrudePolygon(polygons, opts) {
     const translate = opts.translate || [0, 0];
     const scale$$1 = opts.scale || [1, 1];
     const boundingRect = opts.boundingRect;
+    const transformdRect = {
+        x: boundingRect.x * scale$$1[0] + translate[0],
+        y: boundingRect.y * scale$$1[1] + translate[1],
+        width: boundingRect.width * scale$$1[0],
+        height: boundingRect.height * scale$$1[1],
+    };
+
+    const epsilon = Math.min(
+        boundingRect.width, boundingRect.height
+    ) / 1e5;
     for (let i = 0; i < polygons.length; i++) {
-        const {vertices, holes, dimensions} = earcut_1.flatten(polygons[i]);
+        const newPolygon = removeClosePoints(polygons[i], epsilon);
+        if (!newPolygon) {
+            continue;
+        }
+        const {vertices, holes, dimensions} = earcut_1.flatten(newPolygon);
 
         for (let k = 0; k < vertices.length;) {
             vertices[k] = vertices[k++] * scale$$1[0] + translate[0];
@@ -1345,12 +1470,7 @@ function extrudePolygon(polygons, opts) {
             vertices,
             topVertices,
             holes,
-            rect: {
-                x: boundingRect.x * scale$$1[0] + translate[0],
-                y: boundingRect.y * scale$$1[1] + translate[1],
-                width: boundingRect.width * scale$$1[0],
-                height: boundingRect.height * scale$$1[1],
-            },
+            rect: transformdRect,
             depth: typeof opts.depth === 'function' ? opts.depth(i) : opts.depth
         });
     }
@@ -1372,7 +1492,7 @@ function extrudePolygon(polygons, opts) {
  * @param {Array} [opts.translate]
  * @param {Array} [opts.scale]
  * @param {Object} [opts.boundingRect]
- * @return {Object} {indices, position, uv, normal}
+ * @return {Object} {indices, position, uv, normal, boundingRect}
  */
 function extrudePolyline(polylines, opts) {
 
@@ -1423,7 +1543,6 @@ function updateBoundingRect(points, min, max) {
  * @param {boolean} [opts.smoothBevel = false]
  * @param {boolean} [opts.lineWidth = 1]
  * @param {boolean} [opts.miterLimit = 2]
- * @param {string} [opts.depthProperty='height']
  * @param {Object} [opts.fitRect] translate and scale will be ignored if fitRect is set
  * @param {Array} [opts.translate]
  * @param {Array} [opts.scale]
