@@ -45,8 +45,6 @@ geometry.attributes.normal.value = normal;
 geometry.indices = result.indices;
 ```
 
-[Example](https://github.com/pissang/geometry-extrude-example-regl)
-
 ### Use with ThreeJS
 
 ```js
@@ -76,6 +74,8 @@ const draw = regl({
     elements: indices
 });
 ```
+
+[Example](https://github.com/pissang/geometry-extrude-example-regl)
 
 ## Full API List
 
