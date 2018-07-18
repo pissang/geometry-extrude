@@ -7,6 +7,7 @@
     "build": "rollup -c && uglifyjs -c -m -- dist/geometry-extrude.js > dist/geometry-extrude.min.js"
   },
   "types": "index.d.ts",
+  "repository": "https://github.com/pissang/geometry-extrude",
   "license": "MIT",
   "dependencies": {
     "earcut": "^2.1.3"

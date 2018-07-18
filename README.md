@@ -45,15 +45,19 @@ geometry.attributes.normal.value = normal;
 geometry.indices = result.indices;
 ```
 
+[Example](https://github.com/pissang/geometry-extrude-example-regl)
+
 ### Use with ThreeJS
 
 ```js
 const {indices, position, uv, normal} = extrudePolygon(squareWithHole);
 const geometry = new THREE.BufferGeometry();
-geometry.addAttribute('position', new THREE.BufferAttribute(position, 3));
-geometry.addAttribute('normal', new THREE.BufferAttribute(normal, 3));
-geometry.setIndex(indices);
+geometry.addAttribute('position', new THREE.Float32BufferAttribute(position, 3));
+geometry.addAttribute('normal', new THREE.Float32BufferAttribute(normal, 3));
+geometry.setIndex(new THREE.Uint16BufferAttribute(indices, 1));
 ```
+
+[Example](https://github.com/pissang/geometry-extrude-example-threejs)
 
 ### Use with regl
 
@@ -64,15 +68,12 @@ const draw = regl({
     vert: `...`,
 
     attributes: {
-        position: regl.buffer(position),
-        uv: regl.buffer(uv),
-        normal: regl.buffer(normal)
+        position: position,
+        uv: uv,
+        normal: norma
     },
 
-    elements: regl.elements({
-        primitive: 'triangles',
-        data: indices
-    })
+    elements: indices
 });
 ```
 
