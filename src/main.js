@@ -640,9 +640,8 @@ function removeClosePoints(polygon, epsilon) {
  *
  * @return {Object} {indices, position, uv, normal, boundingRect}
  */
+// TODO fitRect x, y are negative?
 // TODO Dimensions
-// TODO UV, normal
-// TODO If smooth connection between side and bevel.
 // TODO Ignore bottom, bevel="top"|"bottom"
 export function extrudePolygon(polygons, opts) {
 
