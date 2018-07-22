@@ -1179,7 +1179,7 @@ function addTopAndBottom({indices, vertices, topVertices, rect, depth}, out, cur
     }
     const size = Math.max(rect.width, rect.height);
     // Top and bottom vertices
-    for (let k = 0; k < 2; k++) {
+    for (let k = 0; k < (opts.excludeBottom ? 1 : 2); k++) {
         for (let i = 0; i < topVertices.length; i += 2) {
             const x = topVertices[i];
             const y = topVertices[i + 1];
@@ -1193,10 +1193,12 @@ function addTopAndBottom({indices, vertices, topVertices, rect, depth}, out, cur
         }
     }
     // Bottom indices
-    const vertexCount = vertices.length / 2;
-    for (let i = 0; i < indicesLen; i += 3) {
-        for (let k = 0; k < 3; k++) {
-            out.indices[cursors.index++] = vertexOffset + vertexCount + indices[i + 2 - k];
+    if (!opts.excludeBottom) {
+        const vertexCount = vertices.length / 2;
+        for (let i = 0; i < indicesLen; i += 3) {
+            for (let k = 0; k < 3; k++) {
+                out.indices[cursors.index++] = vertexOffset + vertexCount + indices[i + 2 - k];
+            }
         }
     }
 }
@@ -1205,14 +1207,15 @@ function addTopAndBottom({indices, vertices, topVertices, rect, depth}, out, cur
 function innerExtrudeTriangulatedPolygon(preparedData, opts) {
     let indexCount = 0;
     let vertexCount = 0;
+
     for (let p = 0; p < preparedData.length; p++) {
         const {indices, vertices, holes, depth} = preparedData[p];
         const polygonVertexCount = vertices.length / 2;
         const bevelSize = Math.min(depth / 2, opts.bevelSize);
         const bevelSegments = !(bevelSize > 0) ? 0 : opts.bevelSegments;
 
-        indexCount += indices.length * 2;
-        vertexCount += polygonVertexCount * 2;
+        indexCount += indices.length * (opts.excludeBottom ? 1 : 2);
+        vertexCount += polygonVertexCount * (opts.excludeBottom ? 1 : 2);
         const ringCount = 2 + bevelSegments * 2;
 
         let start = 0;
@@ -1406,15 +1409,15 @@ function removeClosePoints(polygon, epsilon) {
  * @param {number} [opts.bevelSegments = 2]
  * @param {boolean} [opts.smoothSide = false]
  * @param {boolean} [opts.smoothBevel = false]
+ * @param {boolean} [opts.excludeBottom = false]
  * @param {Object} [opts.fitRect] translate and scale will be ignored if fitRect is set
  * @param {Array} [opts.translate]
  * @param {Array} [opts.scale]
  *
  * @return {Object} {indices, position, uv, normal, boundingRect}
  */
+// TODO fitRect x, y are negative?
 // TODO Dimensions
-// TODO UV, normal
-// TODO If smooth connection between side and bevel.
 // TODO Ignore bottom, bevel="top"|"bottom"
 function extrudePolygon(polygons, opts) {
 
@@ -1486,6 +1489,7 @@ function extrudePolygon(polygons, opts) {
  * @param {number} [opts.bevelSegments = 2]
  * @param {boolean} [opts.smoothSide = false]
  * @param {boolean} [opts.smoothBevel = false]
+ * @param {boolean} [opts.excludeBottom = false]
  * @param {boolean} [opts.lineWidth = 1]
  * @param {boolean} [opts.miterLimit = 2]
  * @param {Object} [opts.fitRect] translate and scale will be ignored if fitRect is set
@@ -1541,6 +1545,7 @@ function updateBoundingRect(points, min, max) {
  * @param {number} [opts.bevelSegments = 2]
  * @param {boolean} [opts.smoothSide = false]
  * @param {boolean} [opts.smoothBevel = false]
+ * @param {boolean} [opts.excludeBottom = false]
  * @param {boolean} [opts.lineWidth = 1]
  * @param {boolean} [opts.miterLimit = 2]
  * @param {Object} [opts.fitRect] translate and scale will be ignored if fitRect is set

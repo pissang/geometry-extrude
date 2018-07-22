@@ -99,6 +99,9 @@ extrudePolygon(
         smoothSide?: boolean,
         // If has smooth bevel, default to be false.
         smoothBevel?: boolean,
+        // If exclude bottom faces, default to be false.
+        // Usefull when bottom side can't be seen.
+        excludeBottom?: boolean,
         // Transform the polygon to fit this rect.
         // Will keep polygon aspect if only width or height is given.
         fitRect?: {x?: number, y?: number, width?: number: height?: number},

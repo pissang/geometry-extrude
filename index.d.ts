@@ -10,6 +10,7 @@ type BasicExtrudeOpt = {
     bevelSegments?: number,
     smoothSide?: boolean,
     smoothBevel?: boolean,
+    excludeBottom?: boolean,
     fitRect?: Rect,
     translate?: ArrayLike<number>,
     scale?: ArrayLike<number>
