@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>Simple Extrude Example</title>
+</head>
+<body>
+    <style>
+        html, body, #main {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            overflow: hidden;
+        }
+    </style>
+    <canvas id="main"></canvas>
+    <script src="../dist/geometry-extrude.js"></script>
+    <script src="./lib/dat.gui.js"></script>
+    <script src="./lib/claygl.js"></script>
+    <script>
+        function generateCirclePoly(radius) {
+            const points = [];
+            for (let i = 0; i < 1000; i++) {
+                const rad = Math.PI * 2 * i / 1000;
+                const x = Math.sin(rad) * radius;
+                const y = Math.cos(rad) * radius;
+                points.push([x, y]);
+            }
+            return points;
+        }
+
+        clay.application.create('#main', {
+
+            autoRender: false,
+
+            graphic: {
+                linear: true,
+                tonemapping: true,
+                shadow: true
+            },
+
+            init(app) {
+                this._camera = app.createCamera([0, 0, 150], [0, 0, 0]);
+
+                app.createDirectionalLight([-1, -2, -1], '#aaa');
+                app.scene.add(new clay.light.AmbientSH({
+                    intensity: 0.4,
+                    coefficients: [0.844, 0.712, 0.691, -0.037, 0.083, 0.167, 0.343, 0.288, 0.299, -0.041, -0.021, -0.009, -0.003, -0.041, -0.064, -0.011, -0.007, -0.004, -0.031, 0.034, 0.081, -0.060, -0.049, -0.060, 0.046, 0.056, 0.050]
+                }));
+
+                const config = {
+                    simplify: 0
+                };
+
+                const geometry = new clay.Geometry({
+                    dynamic: true
+                });
+
+                function updateGeometry() {
+                    const polygons = [
+                        [generateCirclePoly(100), generateCirclePoly(70)]
+                    ];
+                    const {position, indices} = geometryExtrude.extrudePolygon(polygons, {
+                        depth: 20,
+                        bevelSize: 10,
+                        bevelSegments: 5,
+                        simplify: config.simplify
+                    });
+                    console.log(position.length, indices.length);
+                    geometry.attributes.position.value = position;
+                    geometry.indices = indices;
+                    geometry.generateVertexNormals();
+                    geometry.generateBarycentric();
+                    geometry.updateBoundingBox();
+                    geometry.dirty();
+                    app.render();
+                }
+
+                const mesh = app.createMesh(geometry, {});
+                mesh.material.set('lineWidth', 1);
+
+                this._control = new clay.plugin.OrbitControl({
+                    target: this._camera,
+                    domElement: app.container,
+                    timeline: app.timeline,
+                    rotateSensitivity: 2
+                });
+
+                this._control.on('update', function () {
+                    app.render();
+                });
+
+                const gui = new dat.GUI();
+                gui.add(config, 'simplify', 0, 1).step(0.01).onChange(updateGeometry);
+
+                updateGeometry();
+            },
+
+            loop() {}
+        });
+    </script>
+</body>
+</html>

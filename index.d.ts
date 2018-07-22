@@ -8,6 +8,7 @@ type Rect = {
 type BasicExtrudeOpt = {
     bevelSize?: number,
     bevelSegments?: number,
+    simplify?: number,
     smoothSide?: boolean,
     smoothBevel?: boolean,
     excludeBottom?: boolean,

@@ -95,6 +95,9 @@ extrudePolygon(
         bevelSize?: number,
         // Segments of bevel, default to be 2. Larger value will lead to smoother bevel.
         bevelSegments?: number,
+        // Polygon or polyline simplification tolerance. Default to be 0.
+        // Use https://www.npmjs.com/package/simplify-js to do the simplification. Same with the tolerance parameter in it. The unit is same with depth and bevelSize
+        simplify?: number,
         // If has smooth side, default to be false.
         smoothSide?: boolean,
         // If has smooth bevel, default to be false.

@@ -1,4 +1,9 @@
+// TODO fitRect x, y are negative?
+// TODO Dimensions
+// TODO bevel="top"|"bottom"
+
 import earcut from 'earcut';
+import doSimplify from './simplify';
 import {
     slerp, v2Normalize, v2Dot, v2Add, area,
     v3Normalize, v3Sub, v3Cross
@@ -159,6 +164,7 @@ function normalizeOpts(opts) {
     opts.bevelSegments = opts.bevelSegments == null ? 2 : opts.bevelSegments;
     opts.smoothSide = opts.smoothSide || false;
     opts.smoothBevel = opts.smoothBevel || false;
+    opts.simplify = opts.simplify || 0;
 
     // Normalize bevel options.
     if (typeof opts.depth === 'number') {
@@ -518,7 +524,6 @@ function innerExtrudeTriangulatedPolygon(preparedData, opts) {
 
 function convertPolylineToTriangulatedPolygon(polyline, polylineIdx, opts) {
     const lineWidth = opts.lineWidth;
-    // TODO Built indices.
     const pointCount = polyline.length;
     const points = new Float32Array(pointCount * 2);
     const translate = opts.translate || [0, 0];
@@ -600,7 +605,7 @@ function convertPolylineToTriangulatedPolygon(polyline, polylineIdx, opts) {
     };
 }
 
-function removeClosePoints(polygon, epsilon) {
+function removeClosePointsOfPolygon(polygon, epsilon) {
     const newPolygon = [];
     for (let k  = 0; k < polygon.length; k++) {
         const points = polygon[k];
@@ -628,6 +633,18 @@ function removeClosePoints(polygon, epsilon) {
     }
     return newPolygon.length > 0 ? newPolygon : null;
 }
+
+function simplifyPolygon(polygon, tolerance) {
+    const newPolygon = [];
+    for (let k  = 0; k < polygon.length; k++) {
+        let points = polygon[k];
+        points = doSimplify(points, tolerance, true);
+        if (points.length >= 3) {
+            newPolygon.push(points);
+        }
+    }
+    return newPolygon.length > 0 ? newPolygon : null;
+}
 /**
  *
  * @param {Array} polygons Polygons array that match GeoJSON MultiPolygon geometry.
@@ -635,6 +652,7 @@ function removeClosePoints(polygon, epsilon) {
  * @param {number|Function} [opts.depth]
  * @param {number} [opts.bevelSize = 0]
  * @param {number} [opts.bevelSegments = 2]
+ * @param {number} [opts.simplify = 0]
  * @param {boolean} [opts.smoothSide = false]
  * @param {boolean} [opts.smoothBevel = false]
  * @param {boolean} [opts.excludeBottom = false]
@@ -644,9 +662,6 @@ function removeClosePoints(polygon, epsilon) {
  *
  * @return {Object} {indices, position, uv, normal, boundingRect}
  */
-// TODO fitRect x, y are negative?
-// TODO Dimensions
-// TODO Ignore bottom, bevel="top"|"bottom"
 export function extrudePolygon(polygons, opts) {
 
     opts = Object.assign({}, opts);
@@ -677,10 +692,18 @@ export function extrudePolygon(polygons, opts) {
         boundingRect.width, boundingRect.height
     ) / 1e5;
     for (let i = 0; i < polygons.length; i++) {
-        const newPolygon = removeClosePoints(polygons[i], epsilon);
+        let newPolygon = removeClosePointsOfPolygon(polygons[i], epsilon);
         if (!newPolygon) {
             continue;
         }
+        const simplifyTolerance = opts.simplify / Math.max(scale[0], scale[1]);
+        if (simplifyTolerance > 0) {
+            newPolygon = simplifyPolygon(newPolygon, simplifyTolerance);
+        }
+        if (!newPolygon) {
+            continue;
+        }
+
         const {vertices, holes, dimensions} = earcut.flatten(newPolygon);
 
         for (let k = 0; k < vertices.length;) {
@@ -715,6 +738,7 @@ export function extrudePolygon(polygons, opts) {
  * @param {number} [opts.depth]
  * @param {number} [opts.bevelSize = 0]
  * @param {number} [opts.bevelSegments = 2]
+ * @param {number} [opts.simplify = 0]
  * @param {boolean} [opts.smoothSide = false]
  * @param {boolean} [opts.smoothBevel = false]
  * @param {boolean} [opts.excludeBottom = false]
@@ -740,6 +764,8 @@ export function extrudePolyline(polylines, opts) {
     };
 
     normalizeOpts(opts);
+    const scale = opts.scale || [1, 1];
+
     if (opts.lineWidth == null) {
         opts.lineWidth = 1;
     }
@@ -749,7 +775,12 @@ export function extrudePolyline(polylines, opts) {
     const preparedData = [];
     // Extrude polyline to polygon
     for (let i = 0; i < polylines.length; i++) {
-        preparedData.push(convertPolylineToTriangulatedPolygon(polylines[i], i, opts));
+        let newPolyline = polylines[i];
+        const simplifyTolerance = opts.simplify / Math.max(scale[0], scale[1]);
+        if (simplifyTolerance > 0) {
+            newPolyline = doSimplify(newPolyline, simplifyTolerance, true);
+        }
+        preparedData.push(convertPolylineToTriangulatedPolygon(newPolyline, i, opts));
     }
 
     return innerExtrudeTriangulatedPolygon(preparedData, opts);
@@ -771,6 +802,7 @@ function updateBoundingRect(points, min, max) {
  * @param {number} [opts.depth]
  * @param {number} [opts.bevelSize = 0]
  * @param {number} [opts.bevelSegments = 2]
+ * @param {number} [opts.simplify = 0]
  * @param {boolean} [opts.smoothSide = false]
  * @param {boolean} [opts.smoothBevel = false]
  * @param {boolean} [opts.excludeBottom = false]
