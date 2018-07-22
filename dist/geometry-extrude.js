@@ -655,6 +655,118 @@ earcut.flatten = function (data) {
 
 earcut_1.default = default_1;
 
+/*
+ (c) 2017, Vladimir Agafonkin
+ Simplify.js, a high-performance JS polyline simplification library
+ mourner.github.io/simplify-js
+*/
+
+// to suit your point format, run search/replace for '.x' and '.y';
+// for 3D version, see 3d branch (configurability would draw significant performance overhead)
+
+// square distance between 2 points
+function getSqDist(p1, p2) {
+
+    var dx = p1[0] - p2[0],
+        dy = p1[1] - p2[1];
+
+    return dx * dx + dy * dy;
+}
+
+// square distance from a point to a segment
+function getSqSegDist(p, p1, p2) {
+
+    var x = p1[0],
+        y = p1[1],
+        dx = p2[0] - x,
+        dy = p2[1] - y;
+
+    if (dx !== 0 || dy !== 0) {
+
+        var t = ((p[0] - x) * dx + (p[1] - y) * dy) / (dx * dx + dy * dy);
+
+        if (t > 1) {
+            x = p2[0];
+            y = p2[1];
+
+        } else if (t > 0) {
+            x += dx * t;
+            y += dy * t;
+        }
+    }
+
+    dx = p[0] - x;
+    dy = p[1] - y;
+
+    return dx * dx + dy * dy;
+}
+// rest of the code doesn't care about point format
+
+// basic distance-based simplification
+function simplifyRadialDist(points, sqTolerance) {
+
+    var prevPoint = points[0],
+        newPoints = [prevPoint],
+        point;
+
+    for (var i = 1, len = points.length; i < len; i++) {
+        point = points[i];
+
+        if (getSqDist(point, prevPoint) > sqTolerance) {
+            newPoints.push(point);
+            prevPoint = point;
+        }
+    }
+
+    if (prevPoint !== point) newPoints.push(point);
+
+    return newPoints;
+}
+
+function simplifyDPStep(points, first, last, sqTolerance, simplified) {
+    var maxSqDist = sqTolerance,
+        index;
+
+    for (var i = first + 1; i < last; i++) {
+        var sqDist = getSqSegDist(points[i], points[first], points[last]);
+
+        if (sqDist > maxSqDist) {
+            index = i;
+            maxSqDist = sqDist;
+        }
+    }
+
+    if (maxSqDist > sqTolerance) {
+        if (index - first > 1) simplifyDPStep(points, first, index, sqTolerance, simplified);
+        simplified.push(points[index]);
+        if (last - index > 1) simplifyDPStep(points, index, last, sqTolerance, simplified);
+    }
+}
+
+// simplification using Ramer-Douglas-Peucker algorithm
+function simplifyDouglasPeucker(points, sqTolerance) {
+    var last = points.length - 1;
+
+    var simplified = [points[0]];
+    simplifyDPStep(points, 0, last, sqTolerance, simplified);
+    simplified.push(points[last]);
+
+    return simplified;
+}
+
+// both algorithms combined for awesome performance
+function simplify(points, tolerance, highestQuality) {
+
+    if (points.length <= 2) return points;
+
+    var sqTolerance = tolerance !== undefined ? tolerance * tolerance : 1;
+
+    points = highestQuality ? points : simplifyRadialDist(points, sqTolerance);
+    points = simplifyDouglasPeucker(points, sqTolerance);
+
+    return points;
+}
+
 function dot(v1, v2) {
     return v1[0] * v2[0] + v1[1] * v2[1] + v1[2] * v2[2];
 }
@@ -775,6 +887,10 @@ function area$1(points, start, end) {
 
     return area;
 }
+
+// TODO fitRect x, y are negative?
+// TODO Dimensions
+// TODO bevel="top"|"bottom"
 
 function triangulate(vertices, holes, dimensions=2) {
     return earcut_1(vertices, holes, dimensions);
@@ -931,6 +1047,7 @@ function normalizeOpts(opts) {
     opts.bevelSegments = opts.bevelSegments == null ? 2 : opts.bevelSegments;
     opts.smoothSide = opts.smoothSide || false;
     opts.smoothBevel = opts.smoothBevel || false;
+    opts.simplify = opts.simplify || 0;
 
     // Normalize bevel options.
     if (typeof opts.depth === 'number') {
@@ -1290,7 +1407,6 @@ function innerExtrudeTriangulatedPolygon(preparedData, opts) {
 
 function convertPolylineToTriangulatedPolygon(polyline, polylineIdx, opts) {
     const lineWidth = opts.lineWidth;
-    // TODO Built indices.
     const pointCount = polyline.length;
     const points = new Float32Array(pointCount * 2);
     const translate = opts.translate || [0, 0];
@@ -1372,7 +1488,7 @@ function convertPolylineToTriangulatedPolygon(polyline, polylineIdx, opts) {
     };
 }
 
-function removeClosePoints(polygon, epsilon) {
+function removeClosePointsOfPolygon(polygon, epsilon) {
     const newPolygon = [];
     for (let k  = 0; k < polygon.length; k++) {
         const points = polygon[k];
@@ -1400,6 +1516,18 @@ function removeClosePoints(polygon, epsilon) {
     }
     return newPolygon.length > 0 ? newPolygon : null;
 }
+
+function simplifyPolygon(polygon, tolerance) {
+    const newPolygon = [];
+    for (let k  = 0; k < polygon.length; k++) {
+        let points = polygon[k];
+        points = simplify(points, tolerance, true);
+        if (points.length >= 3) {
+            newPolygon.push(points);
+        }
+    }
+    return newPolygon.length > 0 ? newPolygon : null;
+}
 /**
  *
  * @param {Array} polygons Polygons array that match GeoJSON MultiPolygon geometry.
@@ -1407,6 +1535,7 @@ function removeClosePoints(polygon, epsilon) {
  * @param {number|Function} [opts.depth]
  * @param {number} [opts.bevelSize = 0]
  * @param {number} [opts.bevelSegments = 2]
+ * @param {number} [opts.simplify = 0]
  * @param {boolean} [opts.smoothSide = false]
  * @param {boolean} [opts.smoothBevel = false]
  * @param {boolean} [opts.excludeBottom = false]
@@ -1416,9 +1545,6 @@ function removeClosePoints(polygon, epsilon) {
  *
  * @return {Object} {indices, position, uv, normal, boundingRect}
  */
-// TODO fitRect x, y are negative?
-// TODO Dimensions
-// TODO Ignore bottom, bevel="top"|"bottom"
 function extrudePolygon(polygons, opts) {
 
     opts = Object.assign({}, opts);
@@ -1449,10 +1575,18 @@ function extrudePolygon(polygons, opts) {
         boundingRect.width, boundingRect.height
     ) / 1e5;
     for (let i = 0; i < polygons.length; i++) {
-        const newPolygon = removeClosePoints(polygons[i], epsilon);
+        let newPolygon = removeClosePointsOfPolygon(polygons[i], epsilon);
         if (!newPolygon) {
             continue;
         }
+        const simplifyTolerance = opts.simplify / Math.max(scale$$1[0], scale$$1[1]);
+        if (simplifyTolerance > 0) {
+            newPolygon = simplifyPolygon(newPolygon, simplifyTolerance);
+        }
+        if (!newPolygon) {
+            continue;
+        }
+
         const {vertices, holes, dimensions} = earcut_1.flatten(newPolygon);
 
         for (let k = 0; k < vertices.length;) {
@@ -1487,6 +1621,7 @@ function extrudePolygon(polygons, opts) {
  * @param {number} [opts.depth]
  * @param {number} [opts.bevelSize = 0]
  * @param {number} [opts.bevelSegments = 2]
+ * @param {number} [opts.simplify = 0]
  * @param {boolean} [opts.smoothSide = false]
  * @param {boolean} [opts.smoothBevel = false]
  * @param {boolean} [opts.excludeBottom = false]
@@ -1512,6 +1647,8 @@ function extrudePolyline(polylines, opts) {
     };
 
     normalizeOpts(opts);
+    const scale$$1 = opts.scale || [1, 1];
+
     if (opts.lineWidth == null) {
         opts.lineWidth = 1;
     }
@@ -1521,7 +1658,12 @@ function extrudePolyline(polylines, opts) {
     const preparedData = [];
     // Extrude polyline to polygon
     for (let i = 0; i < polylines.length; i++) {
-        preparedData.push(convertPolylineToTriangulatedPolygon(polylines[i], i, opts));
+        let newPolyline = polylines[i];
+        const simplifyTolerance = opts.simplify / Math.max(scale$$1[0], scale$$1[1]);
+        if (simplifyTolerance > 0) {
+            newPolyline = simplify(newPolyline, simplifyTolerance, true);
+        }
+        preparedData.push(convertPolylineToTriangulatedPolygon(newPolyline, i, opts));
     }
 
     return innerExtrudeTriangulatedPolygon(preparedData, opts);
@@ -1543,6 +1685,7 @@ function updateBoundingRect(points, min, max) {
  * @param {number} [opts.depth]
  * @param {number} [opts.bevelSize = 0]
  * @param {number} [opts.bevelSegments = 2]
+ * @param {number} [opts.simplify = 0]
  * @param {boolean} [opts.smoothSide = false]
  * @param {boolean} [opts.smoothBevel = false]
  * @param {boolean} [opts.excludeBottom = false]
