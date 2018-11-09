@@ -29,7 +29,7 @@ const squareWithHole = [
     // Hole
     [[2, 2], [8, 2], [8, 8], [2, 8]]
 ];
-const {indices, position, uv, normal} = extrudePolygon(squareWithHole, {
+const {indices, position, uv, normal} = extrudePolygon([squareWithHole], {
     depth: 2
 });
 ```
