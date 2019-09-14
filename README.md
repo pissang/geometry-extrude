@@ -42,7 +42,7 @@ const geometry = new clay.Geometry();
 geometry.attributes.position.value = position;
 geometry.attributes.texcoord0.value = uv;
 geometry.attributes.normal.value = normal;
-geometry.indices = result.indices;
+geometry.indices = indices;
 ```
 
 ### Use with ThreeJS
