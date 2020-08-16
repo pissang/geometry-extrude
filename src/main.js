@@ -277,7 +277,7 @@ function addExtrudeSide(
     const bevelSize = Math.min(depth / 2, opts.bevelSize);
     const bevelSegments = opts.bevelSegments;
     const vertexOffset = cursors.vertex;
-    const size = Math.max(rect.width, rect.height);
+    const size = Math.max(rect.width, rect.height, depth);
 
     // Side vertices
     if (bevelSize > 0) {
