@@ -1,7 +1,7 @@
 {
   "name": "geometry-extrude",
   "version": "0.1.2",
-  "main": "src/main.js",
+  "main": "dist/geometry-extrude.js",
   "scripts": {
     "dev": "rollup -c -w",
     "build": "rollup -c && uglifyjs -c -m -- dist/geometry-extrude.js > dist/geometry-extrude.min.js"
