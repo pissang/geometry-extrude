@@ -22,7 +22,8 @@ const v2 = [];
 const v = [];
 
 function innerOffsetPolygon(
-    vertices, out, start, end, outStart, offset, miterLimit, close
+    vertices, out, start, end, outStart, offset, miterLimit, close,
+    removeInterctions, offsetLines
 ) {
     const checkMiterLimit = miterLimit != null;
     let cursor = outStart;
@@ -34,6 +35,7 @@ function innerOffsetPolygon(
     let prevOffsetY;
     let prevCursor;
     let tmpIntersection = [];
+
     for (let i = start; i < end; i++) {
         const nextIdx = i === end - 1 ? start : i + 1;
         const prevIdx = i === start ? end - 1 : i - 1;
@@ -64,6 +66,8 @@ function innerOffsetPolygon(
             prevOffsetX = out[cursor * 2] = x2 + v[0] * offset;
             prevOffsetY = out[cursor * 2 + 1] = y2 + v[1] * offset;
             prevCursor = cursor;
+
+            offsetLines && offsetLines.push([x2, y2, prevOffsetX, prevOffsetY, cursor])
             cursor++;
         }
         else if (!close && i === end - 1) {
@@ -88,6 +92,7 @@ function innerOffsetPolygon(
             const cosA = v2Dot(v, v2);
             const sinA = Math.sqrt(1 - cosA * cosA);
             // PENDING
+            // Make sure it's offset lines instead of vertices.
             const miter = offset * Math.min(10, 1 / sinA);
 
             const isCovex = offset * cosA < 0;
@@ -112,7 +117,8 @@ function innerOffsetPolygon(
             }
 
             if (needCheckIntersection) {
-                if (prevOffsetX != null) {
+                // TODO Handle with whole.
+                if (removeInterctions && prevOffsetX != null) {
                     // Greedy, only check with previous offset line
                     // PENDING: Is it necessary to check with other lines?
                     const t = lineIntersection(
@@ -130,10 +136,14 @@ function innerOffsetPolygon(
                 prevOffsetX = out[cursor * 2] = offsetX;
                 prevOffsetY = out[cursor * 2 + 1] = offsetY;
                 prevCursor = cursor;
+
+                offsetLines && offsetLines.push([x2, y2, offsetX, offsetY, cursor])
+
                 cursor++;
             }
         }
     }
+
 
     return indicesMap;
 }
@@ -142,8 +152,10 @@ export function offsetPolygon(vertices, holes, offset, miterLimit, close) {
     const offsetVertices = miterLimit != null ? [] : new Float32Array(vertices.length);
     const exteriorSize = (holes && holes.length) ? holes[0] : vertices.length / 2;
 
+    const offsetLines = [];
+
     innerOffsetPolygon(
-        vertices, offsetVertices, 0, exteriorSize, 0, offset, miterLimit, close, false
+        vertices, offsetVertices, 0, exteriorSize, 0, offset, miterLimit, close, true
     );
 
     if (holes) {
@@ -153,11 +165,34 @@ export function offsetPolygon(vertices, holes, offset, miterLimit, close) {
             innerOffsetPolygon(
                 vertices, offsetVertices, start, end,
                 miterLimit != null ? offsetVertices.length / 2 : start,
-                offset, miterLimit, close
+                offset, miterLimit, close, false
             );
         }
     }
 
+    // TODO holes
+    // Remove intersections of offseted polygon
+    // let len = offsetLines.length;
+    // let tmpIntersection = [];
+    // for (let i = 0; i < len; i++) {
+    //     const line1 = offsetLines[i];
+    //     for (let k = i + 1; k < len; k++) {
+    //         const line2 = offsetLines[k];
+
+    //         const t = lineIntersection(
+    //             line1[0], line1[1], line1[2], line1[3],
+    //             line2[0], line2[1], line2[2], line2[3], tmpIntersection, 0
+    //         );
+    //         // Use a eplison
+    //         if (t >= -1e-2 && t <= 1 + 1e-2) {
+    //             const cursor1 = line1[4] * 2;
+    //             const cursor2 = line2[4] * 2;
+    //             // Update
+    //             offsetVertices[cursor1] = offsetVertices[cursor2] = line1[2] = line2[2] = tmpIntersection[0];
+    //             offsetVertices[cursor1 + 1] = offsetVertices[cursor2 + 1] = line1[3] = line2[3]= tmpIntersection[1];
+    //         }
+    //     }
+    // }
     return offsetVertices;
 }
 
