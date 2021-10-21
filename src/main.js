@@ -23,7 +23,8 @@ const v = [];
 
 function innerOffsetPolygon(
     vertices, out, start, end, outStart, offset, miterLimit, close,
-    removeInterctions, offsetLines
+    removeIntersections,
+    // offsetLines
 ) {
     const checkMiterLimit = miterLimit != null;
     let cursor = outStart;
@@ -67,7 +68,7 @@ function innerOffsetPolygon(
             prevOffsetY = out[cursor * 2 + 1] = y2 + v[1] * offset;
             prevCursor = cursor;
 
-            offsetLines && offsetLines.push([x2, y2, prevOffsetX, prevOffsetY, cursor])
+            // offsetLines && offsetLines.push([x2, y2, prevOffsetX, prevOffsetY, cursor])
             cursor++;
         }
         else if (!close && i === end - 1) {
@@ -118,7 +119,7 @@ function innerOffsetPolygon(
 
             if (needCheckIntersection) {
                 // TODO Handle with whole.
-                if (removeInterctions && prevOffsetX != null) {
+                if (removeIntersections && prevOffsetX != null) {
                     // Greedy, only check with previous offset line
                     // PENDING: Is it necessary to check with other lines?
                     const t = lineIntersection(
@@ -137,7 +138,7 @@ function innerOffsetPolygon(
                 prevOffsetY = out[cursor * 2 + 1] = offsetY;
                 prevCursor = cursor;
 
-                offsetLines && offsetLines.push([x2, y2, offsetX, offsetY, cursor])
+                // offsetLines && offsetLines.push([x2, y2, offsetX, offsetY, cursor])
 
                 cursor++;
             }
@@ -610,11 +611,11 @@ function convertPolylineToTriangulatedPolygon(polyline, polylineIdx, opts) {
     const outsidePoints = [];
     const miterLimit = opts.miterLimit;
     const outsideIndicesMap = innerOffsetPolygon(
-        points, outsidePoints, 0, pointCount, 0, -lineWidth / 2, miterLimit, false
+        points, outsidePoints, 0, pointCount, 0, -lineWidth / 2, miterLimit, false, true
     );
     reversePoints(points, 2, 0, pointCount);
     const insideIndicesMap = innerOffsetPolygon(
-        points, insidePoints, 0, pointCount, 0, -lineWidth / 2, miterLimit, false
+        points, insidePoints, 0, pointCount, 0, -lineWidth / 2, miterLimit, false, true
     );
 
     const polygonVertexCount = (insidePoints.length + outsidePoints.length) / 2;
