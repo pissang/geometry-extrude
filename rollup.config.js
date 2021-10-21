@@ -1,6 +1,6 @@
-import nodeResolve from 'rollup-plugin-node-resolve';
-import commonjs from 'rollup-plugin-commonjs';
-import babel from 'rollup-plugin-babel';
+import nodeResolve from '@rollup/plugin-node-resolve';
+import commonjs from '@rollup/plugin-commonjs';
+import babel from '@rollup/plugin-babel';
 
 export default {
     input: __dirname + '/src/main.js',
@@ -16,6 +16,7 @@ export default {
         {
             format: 'umd',
             name: 'geometryExtrude',
+            sourcemap: true,
             file: 'dist/geometry-extrude.js'
         }
     ]
