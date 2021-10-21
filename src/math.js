@@ -128,8 +128,11 @@ export function lineIntersection(x1, y1, x2, y2, x3, y3, x4, y4, out, writeOffse
     const t1 = (dx2 * tmp1 - dy2 * tmp2) / cross;
     // const t2 = (dx1 * tmp1 - dy1 * tmp2) / cross;
 
-    out[writeOffset] = x1 + t1 * (x2 - x1);
-    out[writeOffset + 1] = y1 + t1 * (y2 - y1);
+    if (out) {
+        writeOffset = writeOffset || 0;
+        out[writeOffset] = x1 + t1 * (x2 - x1);
+        out[writeOffset + 1] = y1 + t1 * (y2 - y1);
+    }
 
     return t1;
 }

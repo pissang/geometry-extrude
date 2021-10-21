@@ -6,7 +6,7 @@ import earcut from 'earcut';
 import doSimplify from './simplify';
 import {
     slerp, v2Normalize, v2Dot, v2Add, area,
-    v3Normalize, v3Sub, v3Cross
+    v3Normalize, v3Sub, v3Cross, lineIntersection
 } from './math';
 
 export function triangulate(vertices, holes, dimensions=2) {
@@ -25,11 +25,15 @@ function innerOffsetPolygon(
     vertices, out, start, end, outStart, offset, miterLimit, close
 ) {
     const checkMiterLimit = miterLimit != null;
-    let outOff = outStart;
+    let cursor = outStart;
     let indicesMap = null;
     if (checkMiterLimit) {
         indicesMap = new Uint32Array(end - start);
     }
+    let prevOffsetX;
+    let prevOffsetY;
+    let prevCursor;
+    let tmpIntersection = [];
     for (let i = start; i < end; i++) {
         const nextIdx = i === end - 1 ? start : i + 1;
         const prevIdx = i === start ? end - 1 : i - 1;
@@ -48,22 +52,29 @@ function innerOffsetPolygon(
         v2Normalize(v1, v1);
         v2Normalize(v2, v2);
 
-        checkMiterLimit && (indicesMap[i] = outOff);
+        checkMiterLimit && (indicesMap[i] = cursor);
+
+        let needCheckIntersection = false;
+        let offsetX;
+        let offsetY;
         if (!close && i === start) {
             v[0] = v2[1];
             v[1] = -v2[0];
             v2Normalize(v, v);
-            out[outOff * 2] = x2 + v[0] * offset;
-            out[outOff * 2 + 1] = y2 + v[1] * offset;
-            outOff++;
+            prevOffsetX = out[cursor * 2] = x2 + v[0] * offset;
+            prevOffsetY = out[cursor * 2 + 1] = y2 + v[1] * offset;
+            prevCursor = cursor;
+            cursor++;
         }
         else if (!close && i === end - 1) {
             v[0] = v1[1];
             v[1] = -v1[0];
             v2Normalize(v, v);
-            out[outOff * 2] = x2 + v[0] * offset;
-            out[outOff * 2 + 1] = y2 + v[1] * offset;
-            outOff++;
+
+            offsetX = x2 + v[0] * offset;
+            offsetY = y2 + v[1] * offset;
+
+            needCheckIntersection = true;
         }
         else {
             // PENDING Why using sub will lost the direction info.
@@ -82,21 +93,44 @@ function innerOffsetPolygon(
             const isCovex = offset * cosA < 0;
 
             if (checkMiterLimit && (1 / sinA) > miterLimit && isCovex) {
+                // No need to check line intersection on the outline.
                 const mx = x2 + v[0] * offset;
                 const my = y2 + v[1] * offset;
                 const halfA = Math.acos(sinA) / 2;
                 const dist = Math.tan(halfA) * Math.abs(offset);
-                out[outOff * 2] = mx + v[1] * dist;
-                out[outOff * 2 + 1] = my - v[0] * dist;
-                outOff++;
-                out[outOff * 2] = mx - v[1] * dist;
-                out[outOff * 2 + 1] = my + v[0] * dist;
-                outOff++;
+                out[cursor * 2] = mx + v[1] * dist;
+                out[cursor * 2 + 1] = my - v[0] * dist;
+                cursor++;
+                out[cursor * 2] = mx - v[1] * dist;
+                out[cursor * 2 + 1] = my + v[0] * dist;
+                cursor++;
             }
             else {
-                out[outOff * 2] = x2 + v[0] * miter;
-                out[outOff * 2 + 1] = y2 + v[1] * miter;
-                outOff++;
+                offsetX = x2 + v[0] * miter;
+                offsetY = y2 + v[1] * miter;
+                needCheckIntersection = true;
+            }
+
+            if (needCheckIntersection) {
+                if (prevOffsetX != null) {
+                    // Greedy, only check with previous offset line
+                    // PENDING: Is it necessary to check with other lines?
+                    const t = lineIntersection(
+                        x1, y1, prevOffsetX, prevOffsetY,
+                        x2, y2, offsetX, offsetY, tmpIntersection, 0
+                    );
+                    // Use a eplison
+                    if (t >= -1e-2 && t <= 1 + 1e-2) {
+                        // Update previous offset points.
+                        out[prevCursor * 2] = offsetX = tmpIntersection[0];
+                        out[prevCursor * 2 + 1] = offsetY = tmpIntersection[1];
+                    }
+                }
+
+                prevOffsetX = out[cursor * 2] = offsetX;
+                prevOffsetY = out[cursor * 2 + 1] = offsetY;
+                prevCursor = cursor;
+                cursor++;
             }
         }
     }
