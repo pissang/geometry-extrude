@@ -1,6 +1,7 @@
 // TODO fitRect x, y are negative?
-// TODO Dimensions
+// TODO Extrude dimensions
 // TODO bevel="top"|"bottom"
+// TODO Not add top and bottom vertices if area is 0
 
 import earcut from 'earcut';
 import doSimplify from './simplify';
@@ -232,9 +233,15 @@ function normalizeOpts(opts) {
     opts.depth = opts.depth || 1;
     opts.bevelSize = opts.bevelSize || 0;
     opts.bevelSegments = opts.bevelSegments == null ? 2 : opts.bevelSegments;
-    opts.smoothSide = opts.smoothSide || false;
     opts.smoothBevel = opts.smoothBevel || false;
     opts.simplify = opts.simplify || 0;
+
+    if (opts.smoothSide == null) {
+        opts.smoothSide = 'auto'
+    }
+    if (opts.smoothSideThreshold == null) {
+        opts.smoothSideThreshold = 0.9
+    }
 
     // Normalize bevel options.
     if (typeof opts.depth === 'number') {
@@ -297,6 +304,7 @@ function generateNormal(indices, position) {
 
     const len = indices.length;
     const normals = new Float32Array(position.length);
+
     for (let f = 0; f < len;) {
         const i1 = indices[f++] * 3;
         const i2 = indices[f++] * 3;
@@ -323,6 +331,7 @@ function generateNormal(indices, position) {
         normals[i++] = n[0];
         normals[i++] = n[1];
         normals[i++] = n[2];
+
     }
 
     return normals;
@@ -336,12 +345,10 @@ const quadToTriangle = [
 
 // Add side vertices and indices. Include bevel.
 function addExtrudeSide(
-    out, {vertices, topVertices, depth, rect}, start, end,
+    out, {vertices, topVertices, splittedMap, depth, rect}, start, end,
     cursors, opts
 ) {
     const ringVertexCount = end - start;
-    const splitSide = opts.smoothSide ? 1 : 2;
-    const splitRingVertexCount = ringVertexCount * splitSide;
 
     const splitBevel = opts.smoothBevel ? 1 : 2;
     const bevelSize = Math.min(depth / 2, opts.bevelSize);
@@ -349,9 +356,17 @@ function addExtrudeSide(
     const vertexOffset = cursors.vertex;
     const size = Math.max(rect.width, rect.height, depth);
 
+    function isDuplicateVertex(idx) {
+        const nextIdx = (idx + 1) % ringVertexCount;
+        const x0 = vertices[idx * 2];
+        const y0 = vertices[idx * 2 + 1];
+        const x1 = vertices[nextIdx * 2];
+        const y1 = vertices[nextIdx * 2 + 1];
+        return x0 === x1 && y0 === y1;
+    }
+
     // Side vertices
     if (bevelSize > 0) {
-
         const v0 = [0, 0, 1];
         const v1 = [];
         const v2 = [0, 0, -1];
@@ -366,64 +381,65 @@ function addExtrudeSide(
                 let prevX;
                 let prevY;
                 for (let i = 0; i < ringVertexCount; i++) {
+                    const idx = (i % ringVertexCount + start) * 2;
+                    const rawIdx = splittedMap ? splittedMap[idx / 2] * 2 : idx;
+                    v1[0] = vertices[idx] - topVertices[rawIdx];
+                    v1[1] = vertices[idx + 1] - topVertices[rawIdx + 1];
+                    v1[2] = 0;
+                    const l = Math.sqrt(v1[0] * v1[0] + v1[1] * v1[1]);
+                    v1[0] /= l;
+                    v1[1] /= l;
 
-                    for (let j = 0; j < splitSide; j++) {
-                        // TODO Cache and optimize
-                        let idx = ((i + j) % ringVertexCount + start) * 2;
-                        v1[0] = vertices[idx] - topVertices[idx];
-                        v1[1] = vertices[idx + 1] - topVertices[idx + 1];
-                        v1[2] = 0;
-                        const l = Math.sqrt(v1[0] * v1[0] + v1[1] * v1[1]);
-                        v1[0] /= l;
-                        v1[1] /= l;
+                    const t = (Math.floor(s / splitBevel) + (s % splitBevel)) / bevelSegments;
+                    k === 0 ? slerp(v, v0, v1, t)
+                        : slerp(v, v1, v2, t);
 
-                        const t = (Math.floor(s / splitBevel) + (s % splitBevel)) / bevelSegments;
-                        k === 0 ? slerp(v, v0, v1, t)
-                            : slerp(v, v1, v2, t);
+                    const t2 = k === 0  ? t : 1 - t;
+                    const a = bevelSize * Math.sin(t2 * Math.PI / 2);
+                    const b = l * Math.cos(t2 * Math.PI / 2);
 
-                        const t2 = k === 0  ? t : 1 - t;
-                        const a = bevelSize * Math.sin(t2 * Math.PI / 2);
-                        const b = l * Math.cos(t2 * Math.PI / 2);
+                    // ellipse radius
+                    const r = bevelSize * l / Math.sqrt(a * a + b * b);
 
-                        // ellipse radius
-                        const r = bevelSize * l / Math.sqrt(a * a + b * b);
+                    const x = v[0] * r + topVertices[rawIdx];
+                    const y = v[1] * r + topVertices[rawIdx + 1];
+                    const zz = v[2] * r + z;
+                    out.position[cursors.vertex * 3] = x;
+                    out.position[cursors.vertex * 3 + 1] = y;
+                    out.position[cursors.vertex * 3 + 2] = zz;
 
-                        const x = v[0] * r + topVertices[idx];
-                        const y = v[1] * r + topVertices[idx + 1];
-                        const zz = v[2] * r + z;
-                        out.position[cursors.vertex * 3] = x;
-                        out.position[cursors.vertex * 3 + 1] = y;
-                        out.position[cursors.vertex * 3 + 2] = zz;
-
-                        // TODO Cache and optimize
-                        if (i > 0 || j > 0) {
-                            uLen += Math.sqrt((prevX - x) * (prevX - x) + (prevY - y) * (prevY - y));
-                        }
-                        if (s > 0 || k > 0) {
-                            let tmp = (cursors.vertex - splitRingVertexCount) * 3;
-                            let prevX2 = out.position[tmp];
-                            let prevY2 = out.position[tmp + 1];
-                            let prevZ2 = out.position[tmp + 2];
-
-                            vLen[i] += Math.sqrt(
-                                (prevX2 - x) * (prevX2 - x)
-                                + (prevY2 - y) * (prevY2 - y)
-                                + (prevZ2 - zz) * (prevZ2 - zz)
-                            );
-                        }
-                        out.uv[cursors.vertex * 2] = uLen / size;
-                        out.uv[cursors.vertex * 2 + 1] = vLen[i] / size;
-
-                        prevX = x;
-                        prevY = y;
-                        cursors.vertex++;
+                    // TODO Cache and optimize
+                    if (i > 0) {
+                        uLen += Math.sqrt((prevX - x) * (prevX - x) + (prevY - y) * (prevY - y));
                     }
+                    if (s > 0 || k > 0) {
+                        let tmp = (cursors.vertex - ringVertexCount) * 3;
+                        let prevX2 = out.position[tmp];
+                        let prevY2 = out.position[tmp + 1];
+                        let prevZ2 = out.position[tmp + 2];
 
+                        vLen[i] += Math.sqrt(
+                            (prevX2 - x) * (prevX2 - x)
+                            + (prevY2 - y) * (prevY2 - y)
+                            + (prevZ2 - zz) * (prevZ2 - zz)
+                        );
+                    }
+                    out.uv[cursors.vertex * 2] = uLen / size;
+                    out.uv[cursors.vertex * 2 + 1] = vLen[i] / size;
+
+                    prevX = x;
+                    prevY = y;
+                    cursors.vertex++;
+
+                    // Just ignore this face if vertex are duplicted in `splitVertices`
+                    if (isDuplicateVertex(i)) {
+                        continue;
+                    }
                     if ((splitBevel > 1 && (s % splitBevel)) || (splitBevel === 1 && s >= 1)) {
                         for (let f = 0; f < 6; f++) {
-                            const m = (quadToTriangle[f][0] + i * splitSide) % splitRingVertexCount;
+                            const m = (quadToTriangle[f][0] + i) % ringVertexCount;
                             const n = quadToTriangle[f][1] + ringCount;
-                            out.indices[cursors.index++] = (n - 1) * splitRingVertexCount + m + vertexOffset;
+                            out.indices[cursors.index++] = (n - 1) * ringVertexCount + m + vertexOffset;
                         }
                     }
                 }
@@ -439,39 +455,41 @@ function addExtrudeSide(
             let prevX;
             let prevY;
             for (let i = 0; i < ringVertexCount; i++) {
-                for (let m = 0; m < splitSide; m++) {
-                    const idx = ((i + m) % ringVertexCount + start) * 2;
-                    const x = vertices[idx];
-                    const y = vertices[idx + 1];
-                    out.position[cursors.vertex * 3] = x;
-                    out.position[cursors.vertex * 3 + 1] = y;
-                    out.position[cursors.vertex * 3 + 2] = z;
-                    if (i > 0 || m > 0) {
-                        uLen += Math.sqrt((prevX - x) * (prevX - x) + (prevY - y) * (prevY - y));
-                    }
-                    out.uv[cursors.vertex * 2] = uLen / size;
-                    out.uv[cursors.vertex * 2 + 1] = z / size;
-                    prevX = x;
-                    prevY = y;
-
-                    cursors.vertex++;
+                const idx = (i % ringVertexCount + start) * 2;
+                const x = vertices[idx];
+                const y = vertices[idx + 1];
+                out.position[cursors.vertex * 3] = x;
+                out.position[cursors.vertex * 3 + 1] = y;
+                out.position[cursors.vertex * 3 + 2] = z;
+                if (i > 0) {
+                    uLen += Math.sqrt((prevX - x) * (prevX - x) + (prevY - y) * (prevY - y));
                 }
+                out.uv[cursors.vertex * 2] = uLen / size;
+                out.uv[cursors.vertex * 2 + 1] = z / size;
+                prevX = x;
+                prevY = y;
+
+                cursors.vertex++;
             }
         }
     }
     // Connect the side
     const sideStartRingN = bevelSize > 0 ? (bevelSegments * splitBevel + 1) : 1;
     for (let i = 0; i < ringVertexCount; i++) {
+        // Just ignore this face if vertex are duplicted in `splitVertices`
+        if (isDuplicateVertex(i)) {
+            continue;
+        }
         for (let f = 0; f < 6; f++) {
-            const m = (quadToTriangle[f][0] + i * splitSide) % splitRingVertexCount;
+            const m = (quadToTriangle[f][0] + i) % ringVertexCount;
             const n = quadToTriangle[f][1] + sideStartRingN;
-            out.indices[cursors.index++] = (n - 1) * splitRingVertexCount + m + vertexOffset;
+            out.indices[cursors.index++] = (n - 1) * ringVertexCount + m + vertexOffset;
         }
     }
 }
 
-function addTopAndBottom({indices, vertices, topVertices, rect, depth}, out, cursors, opts) {
-    if (vertices.length <= 4) {
+function addTopAndBottom({indices, topVertices, rect, depth}, out, cursors, opts) {
+    if (topVertices.length <= 4) {
         return;
     }
 
@@ -498,7 +516,7 @@ function addTopAndBottom({indices, vertices, topVertices, rect, depth}, out, cur
     }
     // Bottom indices
     if (!opts.excludeBottom) {
-        const vertexCount = vertices.length / 2;
+        const vertexCount = topVertices.length / 2;
         for (let i = 0; i < indicesLen; i += 3) {
             for (let k = 0; k < 3; k++) {
                 out.indices[cursors.index++] = vertexOffset + vertexCount + indices[i + 2 - k];
@@ -507,35 +525,116 @@ function addTopAndBottom({indices, vertices, topVertices, rect, depth}, out, cur
     }
 }
 
+/**
+ * Split vertices for sharp side.
+ */
+ function splitVertices(vertices, holes, smoothSide, smoothSideThreshold) {
+    const isAutoSmooth = smoothSide == null || smoothSide === 'auto';
+    if (smoothSide === true) {
+        return {vertices, holes};
+    }
+    const newVertices = [];
+    const newHoles = holes && [];
+    const count = vertices.length / 2;
+    const v1 = [];
+    const v2 = [];
+
+    // Map of splitted index to raw index
+    const splittedMap = [];
+
+    let start = 0;
+    let end = 0;
+
+    const polysCount = (holes ? holes.length : 0) + 1;
+    for (let h = 0; h < polysCount; h++) {
+        if (h === 0) {
+            end = holes && holes.length ? holes[0] : count;
+        }
+        else {
+            start = holes[h - 1];
+            end = holes[h] || count;
+        }
+
+        for (let i = start; i < end; i++) {
+            const x2 = vertices[i * 2];
+            const y2 = vertices[i * 2 + 1];
+            const nextIdx = i === end - 1 ? start : i + 1;
+            const x3 = vertices[nextIdx * 2];
+            const y3 = vertices[nextIdx * 2 + 1];
+
+            if (isAutoSmooth) {
+                const prevIdx = i === start ? end - 1 : i - 1;
+                const x1 = vertices[prevIdx * 2];
+                const y1 = vertices[prevIdx * 2 + 1];
+
+                v1[0] = x1 - x2;
+                v1[1] = y1 - y2;
+                v2[0] = x3 - x2;
+                v2[1] = y3 - y2;
+
+                v2Normalize(v1, v1);
+                v2Normalize(v2, v2);
+
+                const angleCos = v2Dot(v1, v2) * 0.5 + 0.5;
+
+                if ((1 - angleCos) > smoothSideThreshold) {
+                    newVertices.push(x2, y2);
+                    splittedMap.push(i);
+                }
+                else {
+                    newVertices.push(x2, y2, x2, y2);
+                    splittedMap.push(i, i);
+                }
+            }
+            else {
+                newVertices.push(x2, y2, x2, y2);
+                splittedMap.push(i, i);
+            }
+        }
+
+        if (h < polysCount - 1 && newHoles) {
+            newHoles.push(newVertices.length / 2);
+        }
+    }
+
+    return {
+        vertices: new Float32Array(newVertices),
+        splittedMap,
+        holes: newHoles
+    };
+}
 
 function innerExtrudeTriangulatedPolygon(preparedData, opts) {
     let indexCount = 0;
     let vertexCount = 0;
 
     for (let p = 0; p < preparedData.length; p++) {
-        const {indices, vertices, holes, depth} = preparedData[p];
-        const polygonVertexCount = vertices.length / 2;
+        const {indices, vertices, splittedMap, topVertices, holes, depth} = preparedData[p];
         const bevelSize = Math.min(depth / 2, opts.bevelSize);
         const bevelSegments = !(bevelSize > 0) ? 0 : opts.bevelSegments;
 
+        holes = holes || [];
+
         indexCount += indices.length * (opts.excludeBottom ? 1 : 2);
-        vertexCount += polygonVertexCount * (opts.excludeBottom ? 1 : 2);
+        vertexCount += topVertices.length / 2 * (opts.excludeBottom ? 1 : 2);
         const ringCount = 2 + bevelSegments * 2;
 
         let start = 0;
         let end = 0;
-        for (let h = 0; h < (holes ? holes.length : 0) + 1; h++) {
+        for (let h = 0; h < holes.length + 1; h++) {
             if (h === 0) {
-                end = holes && holes.length ? holes[0] : polygonVertexCount;
+                end = holes.length ? holes[0] : vertices.length / 2;
             }
             else {
                 start = holes[h - 1];
-                end = holes[h] || polygonVertexCount;
+                end = holes[h] || vertices.length / 2;
             }
 
-            indexCount += (end - start) * 6 * (ringCount - 1);
+            const faceEnd = splittedMap ? splittedMap[end - 1] + 1 : end;
+            const faceStart = splittedMap ? splittedMap[start] : start;
+            indexCount += (faceEnd - faceStart) * 6 * (ringCount - 1);
 
-            const sideRingVertexCount = (end - start) * (opts.smoothSide ? 1 : 2);
+            const sideRingVertexCount = end - start;
             vertexCount += sideRingVertexCount * ringCount
                 // Double the bevel vertex number if not smooth
                 + (!opts.smoothBevel ? bevelSegments * sideRingVertexCount * 2 : 0);
@@ -558,17 +657,18 @@ function innerExtrudeTriangulatedPolygon(preparedData, opts) {
 
     for (let d = 0; d < preparedData.length; d++) {
         const {holes, vertices} = preparedData[d];
-        const topVertexCount = vertices.length / 2;
+        const vertexCount = vertices.length / 2;
 
         let start = 0;
-        let end = (holes && holes.length) ? holes[0] : topVertexCount;
+        let end = (holes && holes.length) ? holes[0] : vertexCount;
+        console.log(start, end);
         // Add exterior
         addExtrudeSide(data, preparedData[d], start, end, cursors, opts);
         // Add holes
         if (holes) {
             for (let h = 0; h < holes.length; h++) {
                 start = holes[h];
-                end = holes[h + 1] || topVertexCount;
+                end = holes[h + 1] || vertexCount;
                 addExtrudeSide(data, preparedData[d], start, end, cursors, opts);
             }
         }
@@ -660,8 +760,12 @@ function convertPolylineToTriangulatedPolygon(polyline, polylineIdx, opts) {
     const topVertices = opts.bevelSize > 0
         ? offsetPolygon(polygonVertices, [], opts.bevelSize, null, true) : polygonVertices;
     const boundingRect = opts.boundingRect;
+
+    const res = splitVertices(polygonVertices, null, opts.smoothSide, opts.smoothSideThreshold);
     return {
-        vertices: polygonVertices,
+        vertices: res.vertices,
+        rawVertices: vertices,
+        splittedMap: res.splittedMap,
         indices,
         topVertices,
         rect: {
@@ -723,7 +827,8 @@ function simplifyPolygon(polygon, tolerance) {
  * @param {number} [opts.bevelSize = 0]
  * @param {number} [opts.bevelSegments = 2]
  * @param {number} [opts.simplify = 0]
- * @param {boolean} [opts.smoothSide = false]
+ * @param {boolean} [opts.smoothSide = 'auto']
+ * @param {boolean} [opts.smoothSideThreshold = 0.9]    // Will not smooth sharp side.
  * @param {boolean} [opts.smoothBevel = false]
  * @param {boolean} [opts.excludeBottom = false]
  * @param {Object} [opts.fitRect] translate and scale will be ignored if fitRect is set
@@ -789,11 +894,15 @@ export function extrudePolygon(polygons, opts) {
         const topVertices = opts.bevelSize > 0
             ? offsetPolygon(vertices, holes, opts.bevelSize, null, true) : vertices;
         const indices = triangulate(topVertices, holes, dimensions);
+        const res = splitVertices(vertices, holes, opts.smoothSide, opts.smoothSideThreshold)
+
         preparedData.push({
             indices,
-            vertices,
+            vertices: res.vertices,
+            rawVertices: vertices,
             topVertices,
-            holes,
+            holes: res.holes,
+            splittedMap: res.splittedMap,
             rect: transformdRect,
             depth: typeof opts.depth === 'function' ? opts.depth(i) : opts.depth
         });
@@ -809,7 +918,8 @@ export function extrudePolygon(polygons, opts) {
  * @param {number} [opts.bevelSize = 0]
  * @param {number} [opts.bevelSegments = 2]
  * @param {number} [opts.simplify = 0]
- * @param {boolean} [opts.smoothSide = false]
+ * @param {boolean} [opts.smoothSide = 'auto']
+ * @param {boolean} [opts.smoothSideThreshold = 0.9]    // Will not smooth sharp side.
  * @param {boolean} [opts.smoothBevel = false]
  * @param {boolean} [opts.excludeBottom = false]
  * @param {boolean} [opts.lineWidth = 1]
@@ -873,7 +983,8 @@ function updateBoundingRect(points, min, max) {
  * @param {number} [opts.bevelSize = 0]
  * @param {number} [opts.bevelSegments = 2]
  * @param {number} [opts.simplify = 0]
- * @param {boolean} [opts.smoothSide = false]
+ * @param {boolean} [opts.smoothSide = 'auto']
+ * @param {boolean} [opts.smoothSideThreshold = 0.9]    // Will not smooth sharp side.
  * @param {boolean} [opts.smoothBevel = false]
  * @param {boolean} [opts.excludeBottom = false]
  * @param {boolean} [opts.lineWidth = 1]
