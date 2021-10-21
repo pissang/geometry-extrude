@@ -1,6 +1,6 @@
 {
   "name": "geometry-extrude",
-  "version": "0.1.3",
+  "version": "0.2.0",
   "main": "dist/geometry-extrude.js",
   "scripts": {
     "dev": "rollup -c -w",
