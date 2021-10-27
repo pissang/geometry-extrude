@@ -25,6 +25,12 @@ export function v2Normalize(out, v) {
     return out;
 }
 
+export function v2Dist(p0, p1) {
+    const dx = p1[0] - p0[0];
+    const dy = p1[1] - p0[1];
+    return Math.sqrt(dx * dx + dy * dy);
+}
+
 export function scale(out, v, s) {
     out[0] = v[0] * s;
     out[1] = v[1] * s;
@@ -130,8 +136,8 @@ export function lineIntersection(x1, y1, x2, y2, x3, y3, x4, y4, out, writeOffse
 
     if (out) {
         writeOffset = writeOffset || 0;
-        out[writeOffset] = x1 + t1 * (x2 - x1);
-        out[writeOffset + 1] = y1 + t1 * (y2 - y1);
+        out[writeOffset] = x1 + t1 * dx1;
+        out[writeOffset + 1] = y1 + t1 * dy1;
     }
 
     return t1;

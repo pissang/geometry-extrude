@@ -7,7 +7,7 @@ import earcut from 'earcut';
 import doSimplify from './simplify';
 import {
     slerp, v2Normalize, v2Dot, v2Add, area,
-    v3Normalize, v3Sub, v3Cross, lineIntersection
+    v3Normalize, v3Sub, v3Cross, lineIntersection, v2Sub, v2Dist, dot
 } from './math';
 
 export function triangulate(vertices, holes, dimensions=2) {
@@ -23,130 +23,173 @@ const v2 = [];
 const v = [];
 
 function innerOffsetPolygon(
-    vertices, out, start, end, outStart, offset, miterLimit, close,
-    removeIntersections,
+    vertices, out, start, end, outStart, offset, miterLimit, close
     // offsetLines
 ) {
+    // todo close
+    // todo miterLimit
+    // todo indicesMap
+
     const checkMiterLimit = miterLimit != null;
     let cursor = outStart;
     let indicesMap = null;
     if (checkMiterLimit) {
         indicesMap = new Uint32Array(end - start);
     }
-    let prevOffsetX;
-    let prevOffsetY;
-    let prevCursor;
-    let tmpIntersection = [];
 
-    for (let i = start; i < end; i++) {
-        const nextIdx = i === end - 1 ? start : i + 1;
-        const prevIdx = i === start ? end - 1 : i - 1;
-        const x1 = vertices[prevIdx * 2];
-        const y1 = vertices[prevIdx * 2 + 1];
-        const x2 = vertices[i * 2];
-        const y2 = vertices[i * 2 + 1];
-        const x3 = vertices[nextIdx * 2];
-        const y3 = vertices[nextIdx * 2 + 1];
+    function tryOffset(offset) {
+        let edges = [];
+        // Polygon points have been removed duplication.
+        for (let i = start; i < end; i++) {
+            const nextIdx = i === end - 1 ? start : i + 1;
+            const x1 = vertices[i * 2];
+            const y1 = vertices[i * 2 + 1];
+            const x2 = vertices[nextIdx * 2];
+            const y2 = vertices[nextIdx * 2 + 1];
 
-        v1[0] = x2 - x1;
-        v1[1] = y2 - y1;
-        v2[0] = x3 - x2;
-        v2[1] = y3 - y2;
+            const dx1 = y2 - y1;
+            const dy1 = x1 - x2;
 
-        v2Normalize(v1, v1);
-        v2Normalize(v2, v2);
+            const l1 = Math.sqrt(dx1 * dx1 + dy1 * dy1) / offset;
 
-        checkMiterLimit && (indicesMap[i] = cursor);
+            dx1 /= l1;
+            dy1 /= l1;
 
-        let needCheckIntersection = false;
-        let offsetX;
-        let offsetY;
-        if (!close && i === start) {
-            v[0] = v2[1];
-            v[1] = -v2[0];
-            v2Normalize(v, v);
-            prevOffsetX = out[cursor * 2] = x2 + v[0] * offset;
-            prevOffsetY = out[cursor * 2 + 1] = y2 + v[1] * offset;
-            prevCursor = cursor;
-
-            // offsetLines && offsetLines.push([x2, y2, prevOffsetX, prevOffsetY, cursor])
-            cursor++;
+            edges.push([x1 + dx1, y1 + dy1, x2 + dx1, y2 + dy1])
         }
-        else if (!close && i === end - 1) {
-            v[0] = v1[1];
-            v[1] = -v1[0];
-            v2Normalize(v, v);
 
-            offsetX = x2 + v[0] * offset;
-            offsetY = y2 + v[1] * offset;
+        const p1 = [];  // Intersection p1
+        const p2 = [];  // Intersection p2
+        const p0 = [];  // Edge end point
+        const p3 = [];  // Edge end point
 
-            needCheckIntersection = true;
+        let edgeIndices = [];
+        let edgesCount = edges.length;
+        for (let i = 0; i < edgesCount; i++) {
+            edgeIndices.push(i);
         }
-        else {
-            // PENDING Why using sub will lost the direction info.
-            v2Add(v, v2, v1);
-            const tmp = v[1];
-            v[1] = -v[0];
-            v[0] = tmp;
+        let hasRemoved = false;
 
-            v2Normalize(v, v);
+        function removeEdgeIntersections() {
+            hasRemoved = false;
+            const newEdgeIndices = [];
+            const newEdges = edges.slice();
+            let prevIdx = edgesCount - 1;
+            for (let i = 0; i < edgesCount; i++) {
+                const nextIdx = (i + 1) % edgesCount;
+                const curr = edges[edgeIndices[i]];
+                const next = edges[edgeIndices[nextIdx]];
+                const prev = edges[edgeIndices[prevIdx]];
 
-            const cosA = v2Dot(v, v2);
-            const sinA = Math.sqrt(1 - cosA * cosA);
-            // PENDING
-            // Make sure it's offset lines instead of vertices.
-            const miter = offset * Math.min(10, 1 / sinA);
-
-            const isCovex = offset * cosA < 0;
-
-            if (checkMiterLimit && (1 / sinA) > miterLimit && isCovex) {
-                // No need to check line intersection on the outline.
-                const mx = x2 + v[0] * offset;
-                const my = y2 + v[1] * offset;
-                const halfA = Math.acos(sinA) / 2;
-                const dist = Math.tan(halfA) * Math.abs(offset);
-                out[cursor * 2] = mx + v[1] * dist;
-                out[cursor * 2 + 1] = my - v[0] * dist;
-                cursor++;
-                out[cursor * 2] = mx - v[1] * dist;
-                out[cursor * 2 + 1] = my + v[0] * dist;
-                cursor++;
-            }
-            else {
-                offsetX = x2 + v[0] * miter;
-                offsetY = y2 + v[1] * miter;
-                needCheckIntersection = true;
-            }
-
-            if (needCheckIntersection) {
-                // TODO Handle with whole.
-                if (removeIntersections && prevOffsetX != null) {
-                    // Greedy, only check with previous offset line
-                    // PENDING: Is it necessary to check with other lines?
-                    const t = lineIntersection(
-                        x1, y1, prevOffsetX, prevOffsetY,
-                        x2, y2, offsetX, offsetY, tmpIntersection, 0
-                    );
-                    // Use a eplison
-                    if (t >= -1e-2 && t <= 1 + 1e-2) {
-                        // Update previous offset points.
-                        out[prevCursor * 2] = offsetX = tmpIntersection[0];
-                        out[prevCursor * 2 + 1] = offsetY = tmpIntersection[1];
-                    }
+                if (i === prevIdx) {
+                    break;
                 }
 
-                prevOffsetX = out[cursor * 2] = offsetX;
-                prevOffsetY = out[cursor * 2 + 1] = offsetY;
-                prevCursor = cursor;
+                lineIntersection(
+                    prev[0], prev[1], prev[2], prev[3],
+                    curr[0], curr[1], curr[2], curr[3], p1, 0
+                );
+                lineIntersection(
+                    curr[0], curr[1], curr[2], curr[3],
+                    next[0], next[1], next[2], next[3], p2, 0
+                );
 
-                // offsetLines && offsetLines.push([x2, y2, offsetX, offsetY, cursor])
+                // Check if two intersection points are crossed.
+                p0[0] = curr[0];
+                p0[1] = curr[1];
+                p3[0] = curr[2];
+                p3[1] = curr[3];
 
-                cursor++;
+                const t0 = (p1[0] - p0[0]) / (p3[0] - p0[0]);
+                const t1 = (p2[0] - p3[0]) / (p0[0] - p3[0]);
+
+                if (
+                    // On same side
+                    t0 >= 1 && t1 <= 0
+                    || t0 <=0 && t1 >= 1
+                    // Crossed
+                    || t0 + t1 >= 1
+                ) {
+                    hasRemoved = true;
+                    newEdges[edgeIndices[i]] = null;
+                    // Empty edge.
+                    continue;
+                }
+
+                // updates for edges only to be performed after the loop as original values still being used
+                // https://github.com/WebSVG/voronoi/blob/8893768e3929ea713a47dba2c4d273b775e0bd82/src/voronoi_diag.js#L256
+                newEdges[edgeIndices[i]] = [p1[0], p1[1], p2[0], p2[1]];
+
+                newEdgeIndices.push(edgeIndices[i]);
+
+                prevIdx = i;
             }
+
+            edgeIndices = newEdgeIndices;
+            edgesCount = edgeIndices.length;
+            edges = newEdges;
+        }
+
+        do {
+            removeEdgeIntersections();
+        } while (edgeIndices.length > 3 && hasRemoved);
+
+        return {
+            edges,
+            edgeIndices
+        }
+    }
+    // Degenerate: no edge can be used.
+    let edges;
+    let edgeIndices;
+    let dOffset = 0;
+    // Max iteration 6
+    const minDOffset = Math.abs(offset / 60);
+    do {
+        const res = tryOffset(offset);
+        edges = res.edges;
+        edgeIndices = res.edgeIndices;
+        if (edgeIndices.length >= 3 && dOffset < minDOffset) {
+            break;
+        }
+        dOffset = dOffset || Math.abs(offset);
+        dOffset /= 2;
+        // Try finding an offset that won't degenerate.
+        if (edgeIndices.length < 3) {
+            // Reduce offset
+            offset = offset < 0 ? offset + dOffset : offset - dOffset;
+        }
+        else {
+            offset = offset < 0 ? offset - dOffset : offset + dOffset;
+        }
+    } while (true);
+
+    let idx = edges.length - 1;
+    let prevEdge;
+    do {
+        prevEdge = edges[idx--];
+    } while (!prevEdge)
+    if (prevEdge) {
+        for (let i = 0; i < edges.length; i++) {
+            const edge = edges[i] || prevEdge;
+            out[i * 2] = edge[0];
+            out[i * 2 + 1] = edge[1];
+
+            prevEdge = edge;
         }
     }
 
-
+    // if (ctx) {
+    //     for (let i = 0; i < edgeIndices.length; i++) {
+    //         const edge = edges[edgeIndices[i]];
+    //         ctx.beginPath();
+    //         const lum = Math.round(i / edgeIndices.length * 255);
+    //         ctx.strokeStyle = `rgb(${lum}, ${lum}, ${lum})`;
+    //         ctx.moveTo(edge[0], edge[1]);
+    //         ctx.lineTo(edge[2], edge[3]);
+    //         ctx.stroke();
+    //     }
+    // }
     return indicesMap;
 }
 
@@ -154,10 +197,8 @@ export function offsetPolygon(vertices, holes, offset, miterLimit, close) {
     const offsetVertices = miterLimit != null ? [] : new Float32Array(vertices.length);
     const exteriorSize = (holes && holes.length) ? holes[0] : vertices.length / 2;
 
-    const offsetLines = [];
-
     innerOffsetPolygon(
-        vertices, offsetVertices, 0, exteriorSize, 0, offset, miterLimit, close, true
+        vertices, offsetVertices, 0, exteriorSize, 0, offset, miterLimit, close
     );
 
     if (holes) {
@@ -167,34 +208,11 @@ export function offsetPolygon(vertices, holes, offset, miterLimit, close) {
             innerOffsetPolygon(
                 vertices, offsetVertices, start, end,
                 miterLimit != null ? offsetVertices.length / 2 : start,
-                offset, miterLimit, close, false
+                offset, miterLimit, close, ctx
             );
         }
     }
 
-    // TODO holes
-    // Remove intersections of offseted polygon
-    // let len = offsetLines.length;
-    // let tmpIntersection = [];
-    // for (let i = 0; i < len; i++) {
-    //     const line1 = offsetLines[i];
-    //     for (let k = i + 1; k < len; k++) {
-    //         const line2 = offsetLines[k];
-
-    //         const t = lineIntersection(
-    //             line1[0], line1[1], line1[2], line1[3],
-    //             line2[0], line2[1], line2[2], line2[3], tmpIntersection, 0
-    //         );
-    //         // Use a eplison
-    //         if (t >= -1e-2 && t <= 1 + 1e-2) {
-    //             const cursor1 = line1[4] * 2;
-    //             const cursor2 = line2[4] * 2;
-    //             // Update
-    //             offsetVertices[cursor1] = offsetVertices[cursor2] = line1[2] = line2[2] = tmpIntersection[0];
-    //             offsetVertices[cursor1 + 1] = offsetVertices[cursor2 + 1] = line1[3] = line2[3]= tmpIntersection[1];
-    //         }
-    //     }
-    // }
     return offsetVertices;
 }
 
@@ -661,7 +679,6 @@ function innerExtrudeTriangulatedPolygon(preparedData, opts) {
 
         let start = 0;
         let end = (holes && holes.length) ? holes[0] : vertexCount;
-        console.log(start, end);
         // Add exterior
         addExtrudeSide(data, preparedData[d], start, end, cursors, opts);
         // Add holes
@@ -711,11 +728,11 @@ function convertPolylineToTriangulatedPolygon(polyline, polylineIdx, opts) {
     const outsidePoints = [];
     const miterLimit = opts.miterLimit;
     const outsideIndicesMap = innerOffsetPolygon(
-        points, outsidePoints, 0, pointCount, 0, -lineWidth / 2, miterLimit, false, true
+        points, outsidePoints, 0, pointCount, 0, -lineWidth / 2, miterLimit, false
     );
     reversePoints(points, 2, 0, pointCount);
     const insideIndicesMap = innerOffsetPolygon(
-        points, insidePoints, 0, pointCount, 0, -lineWidth / 2, miterLimit, false, true
+        points, insidePoints, 0, pointCount, 0, -lineWidth / 2, miterLimit, false
     );
 
     const polygonVertexCount = (insidePoints.length + outsidePoints.length) / 2;

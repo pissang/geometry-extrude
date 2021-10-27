@@ -9,8 +9,17 @@
 <body>
     <canvas id="main" width="800" height="600"></canvas>
     <script src="../dist/geometry-extrude.js"></script>
+    <script src="./lib/dat.gui.js"></script>
     <script>
+        const canvas = document.getElementById('main');
+        const dpr = window.devicePixelRatio;
+        canvas.style.width = `${canvas.width}px`;
+        canvas.style.height = `${canvas.height}px`;
+        canvas.width *= dpr;
+        canvas.height *= dpr;
         const ctx = document.getElementById('main').getContext('2d');
+        ctx.scale(dpr, dpr);
+
         function drawPolygon(points, color) {
             ctx.beginPath();
             ctx.moveTo(points[0], points[1]);
@@ -23,28 +32,50 @@
             ctx.closePath();
             ctx.strokeStyle = color;
             ctx.stroke();
+
+
+            for (let i = 0; i < points.length;) {
+                const x = points[i++];
+                const y = points[i++];
+                ctx.beginPath();
+                ctx.rect(x - 1, y - 1, 2, 2);
+                ctx.stroke();
+            }
         }
 
-        const polygon = [
-            100, 100,
-            300, 100,
-            150, 150,
-            350, 180,
-            120, 200
-        ];
+        const config = {
+            offset: 100
+        }
 
-        drawPolygon(polygon, '#f00');
+        // const polygon = [
+        //     100, 100,
+        //     300, 100,
+        //     150, 150,
+        //     350, 180,
+        //     120, 200
+        // ];
+        const polygon =
+            flattern(
+                [[0,0.9311714057807814],[0.07345127837953314,0.9282704584258896],[0.14610752019219753,0.9196380571461846],[0.21764693764626664,0.9053785163634922],[0.2877477318459096,0.8855963948846464],[0.35608810389529744,0.8603962515164802],[0.4223462548985921,0.8298826450658288],[0.4862003859599682,0.7941601343395268],[0.5473286981835965,0.7533332781444075],[0.06081423220095061,0.08370382100850904],[0.04692731992150634,0.0922092408647961],[0.03197194118946456,0.09839962211397335],[0.01623414405447221,0.10218201357689694],[-2.3433822882168442e-8,0.10346346407442386]],
+                300, 300, 100, 100
+            );
+        function flattern(input, scaleX, scaleY, translateX, translateY) {
+            const res = [];
+            for (let i = 0; i < input.length; i++) {
+                res.push(input[i][0] * scaleX + translateX, input[i][1] * scaleY + translateY);
+            }
+            return res;
+        }
 
-        drawPolygon(
-            geometryExtrude.offsetPolygon(polygon, null, 10, null, true), '#0f0'
-        );
-        drawPolygon(
-            geometryExtrude.offsetPolygon(polygon, null, -5, null, true), '#00f'
-        );
-
-        drawPolygon(
-            geometryExtrude.offsetPolygon(polygon, null, 20, 1, true), '#000'
-        );
+        function update() {
+            ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+            drawPolygon(polygon, '#f00');
+            geometryExtrude.offsetPolygon(polygon, null, config.offset, null, true, ctx)
+            drawPolygon(geometryExtrude.offsetPolygon(polygon, null, config.offset, null, true), '#00f');
+        }
+        update();
+        const gui = new dat.GUI();
+        gui.add(config, 'offset', -100, 1000).step(0.1).onChange(update);
     </script>
 </body>
 </html>
