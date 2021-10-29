@@ -36,14 +36,14 @@
         drawPolygon(polygon, '#f00');
 
         drawPolygon(
-            geometryExtrude.offsetPolygon(polygon, null, 10), '#0f0'
+            geometryExtrude.offsetPolyline(polygon, 10, 'round'), '#0f0'
         );
         drawPolygon(
-            geometryExtrude.offsetPolygon(polygon, null, -5), '#00f'
+            geometryExtrude.offsetPolyline(polygon, -5, 'round'), '#00f'
         );
 
         drawPolygon(
-            geometryExtrude.offsetPolygon(polygon, null, 20, 1), '#000'
+            geometryExtrude.offsetPolyline(polygon, 20, 'round'), '#000'
         );
     </script>
 </body>

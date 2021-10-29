@@ -68,6 +68,7 @@ interface GeometryExtrudeStatic {
     extrudePolyline(polylines: ArrayLike<Polyline>, opts: BasicExtrudeOpt & {
         depth?: ((idx: number) => number) | number
         lineWidth?: number
+        lineJoin?: 'miter' | 'round' | 'bevel'
         miterLimit?: number
     }): ExtrudeResult
 
