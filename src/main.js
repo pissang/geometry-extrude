@@ -186,6 +186,8 @@ function innerOffsetContour(
 
     let writeIdx = outStart;
     const isRoundJoin = join === 'round';
+    const isBevelJoin = join === 'bevel';
+    const isMiterJoin = !join || join === 'miter';
     // Temp variables.
     const pt1 = [];
     const pt2 = [];
@@ -218,13 +220,42 @@ function innerOffsetContour(
 
                     pt4[0] = offsetedEdges[i][0];
                     pt4[1] = offsetedEdges[i][1];
+                    // TODO not fixed segments
                     innerAppendArc(out, pt3, pt4, pt1, 5, Math.abs(offset));
                     writeIdx += 5;
                 }
                 else {
-                    out[writeIdx * 2] = edge[0];
-                    out[writeIdx * 2 + 1] = edge[1];
-                    writeIdx++;
+                    const limit = isMiterJoin ? miterLimit : Math.abs(offset);
+                    // Bevel join or miter limit join
+                    if (d > limit) {
+                        v2Normalize(v, v);
+                        // Calculate the bevel line
+                        pt1[0] = pt1[0] + v[0] * limit;
+                        pt1[1] = pt1[0] + v[1] * limit;
+                        pt2[0] = pt1[0] - v[1];
+                        pt2[1] = pt1[0] + v[0];
+
+                        lineIntersection(
+                            prevEdge[0], prevEdge[1], prevEdge[2], prevEdge[3],
+                            pt1[0], pt1[1], pt2[0], pt2[1], pt3, 0
+                        );
+                        lineIntersection(
+                            pt1[0], pt1[1], pt2[0], pt2[1],
+                            edge[0], edge[1], edge[2], edge[3], pt4, 0
+                        );
+
+                        out[writeIdx * 2] = pt3[0];
+                        out[writeIdx * 2 + 1] = pt3[1];
+                        writeIdx++;
+                        out[writeIdx * 2] = pt4[0];
+                        out[writeIdx * 2 + 1] = pt4[1];
+                        writeIdx++;
+                    }
+                    else {
+                        out[writeIdx * 2] = edge[0];
+                        out[writeIdx * 2 + 1] = edge[1];
+                        writeIdx++;
+                    }
                 }
             }
             else {
