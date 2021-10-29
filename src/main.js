@@ -231,9 +231,9 @@ function innerOffsetContour(
                         v2Normalize(v, v);
                         // Calculate the bevel line
                         pt1[0] = pt1[0] + v[0] * limit;
-                        pt1[1] = pt1[0] + v[1] * limit;
+                        pt1[1] = pt1[1] + v[1] * limit;
                         pt2[0] = pt1[0] - v[1];
-                        pt2[1] = pt1[0] + v[0];
+                        pt2[1] = pt1[1] + v[0];
 
                         lineIntersection(
                             prevEdge[0], prevEdge[1], prevEdge[2], prevEdge[3],
@@ -865,15 +865,19 @@ function convertPolylineToTriangulatedPolygon(polyline, polylineIdx, opts) {
         indices[off++] = insideIndicesMap[i] + 1 + outsidePointCount;
         indices[off++] = insideIndicesMap[i] + outsidePointCount;
 
-        if (insideIndicesMap[i2] - insideIndicesMap[i] === 2) {
-            indices[off++] = insideIndicesMap[i] + 2 + outsidePointCount;
-            indices[off++] = insideIndicesMap[i] + 1 + outsidePointCount;
-            indices[off++] = outsidePointCount - outsideIndicesMap[i2] - 1;
+        if (insideIndicesMap[i2] - insideIndicesMap[i] > 1) {
+            for (let k = 1; k < insideIndicesMap[i2] - insideIndicesMap[i]; k++) {
+                indices[off++] = insideIndicesMap[i] + k + 1 + outsidePointCount;
+                indices[off++] = insideIndicesMap[i] + k + outsidePointCount;
+                indices[off++] = outsidePointCount - outsideIndicesMap[i2] - 1;
+            }
         }
-        else if (outsideIndicesMap[i2] - outsideIndicesMap[i] === 2) {
-            indices[off++] = insideIndicesMap[i2] + outsidePointCount;
-            indices[off++] = outsidePointCount - 1 - (outsideIndicesMap[i] + 1);
-            indices[off++] = outsidePointCount - 1 - (outsideIndicesMap[i] + 2);
+        else if (outsideIndicesMap[i2] - outsideIndicesMap[i] > 1) {
+            for (let k = 1; k < outsideIndicesMap[i2] - outsideIndicesMap[i]; k++) {
+                indices[off++] = insideIndicesMap[i2] + outsidePointCount;
+                indices[off++] = outsidePointCount - 1 - (outsideIndicesMap[i] + k);
+                indices[off++] = outsidePointCount - 1 - (outsideIndicesMap[i] + k + 1);
+            }
         }
     }
 
@@ -884,7 +888,7 @@ function convertPolylineToTriangulatedPolygon(polyline, polylineIdx, opts) {
     const res = splitVertices(polygonVertices, null, opts.smoothSide, opts.smoothSideThreshold);
     return {
         vertices: res.vertices,
-        rawVertices: vertices,
+        rawVertices: polygonVertices,
         splittedMap: res.splittedMap,
         indices,
         topVertices,
@@ -1072,6 +1076,8 @@ export function extrudePolyline(polylines, opts) {
     if (opts.miterLimit == null) {
         opts.miterLimit = 2;
     }
+    opts.bevelSize = Math.min(opts.bevelSize, opts.lineWidth / 2 - 1e-5);   // Add a tiny threshold.
+
     const preparedData = [];
     // Extrude polyline to polygon
     for (let i = 0; i < polylines.length; i++) {
