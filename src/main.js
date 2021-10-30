@@ -2,6 +2,7 @@
 // TODO Extrude dimensions
 // TODO bevel="top"|"bottom"
 // TODO Not add top and bottom vertices if area is 0
+// TODO Calculate max bevel size by calculating intersection of offset vector with all edges.
 
 import earcut from 'earcut';
 import doSimplify from './simplify';
@@ -351,8 +352,7 @@ export function offsetPolygon(vertices, holes, offset) {
             const end = holes[i + 1] || vertices.length / 2;
             innerOffsetContour(
                 vertices, offsetVertices, start, end,
-                miterLimit != null ? offsetVertices.length / 2 : start,
-                offset, null, miterLimit, close
+                start, offset, null, null, close
             );
         }
     }
