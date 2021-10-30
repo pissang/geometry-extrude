@@ -48,9 +48,6 @@ function innerOffsetContour(
     miterLimit, close
     // offsetLines
 ) {
-    // todo close
-    // todo miterLimit
-    // todo indicesMap
     const needsIndicesMap = miterLimit != null;
     const isComplexJoin = (join && join !== 'miter') || miterLimit;
     const isDynamicArray = isComplexJoin;
@@ -61,8 +58,6 @@ function innerOffsetContour(
     let indicesMap = needsIndicesMap ? new Uint32Array(end - start) : null;
 
     let edges = [];
-    // Save raw offseted edges for calculating lineJoin.
-    const offsetedEdges = edges;
     // Polygon points have been removed duplication.
     for (let i = start; i < (close ? end : end - 1); i++) {
         const nextIdx = i === end - 1 ? start : i + 1;
@@ -71,8 +66,8 @@ function innerOffsetContour(
         const x2 = vertices[nextIdx * 2];
         const y2 = vertices[nextIdx * 2 + 1];
 
-        const dx1 = y2 - y1;
-        const dy1 = x1 - x2;
+        let dx1 = y2 - y1;
+        let dy1 = x1 - x2;
 
         const l1 = Math.sqrt(dx1 * dx1 + dy1 * dy1) / offset;
 
@@ -81,6 +76,8 @@ function innerOffsetContour(
 
         edges.push([x1 + dx1, y1 + dy1, x2 + dx1, y2 + dy1])
     }
+    // Save raw offseted edges for calculating lineJoin.
+    const offsetedEdges = edges.slice();
 
     const p1 = [];  // Intersection p1
     const p2 = [];  // Intersection p2
@@ -88,26 +85,60 @@ function innerOffsetContour(
     const p3 = [];  // Edge end point
 
     let edgeIndices = [];
-    let edgesCount = edges.length;
-    for (let i = 0; i < edgesCount; i++) {
+    for (let i = 0; i < edges.length; i++) {
+        const edge = edges[i];
+        const dx = edge[2] - edge[0];
+        const dy = edge[3] - edge[1];
+        const dist = dx * dx + dy * dy;
+        // Remove too short or invalid edge.
+        if (dist < 1e-8 || isNaN(dist)) {
+            edges[i] = null;
+            continue;
+        }
+
         edgeIndices.push(i);
     }
     let hasRemoved = false;
 
+
     function removeEdgeIntersections() {
         hasRemoved = false;
-        const newEdgeIndices = [];
-        const newEdges = edges.slice();
-        let prevIdx = edgesCount - 1;
+
+        const sortedEdges = [];
+        const edgesCount = edgeIndices.length;
         for (let i = 0; i < edgesCount; i++) {
             const curr = edges[edgeIndices[i]];
-            const nextIdx = (i + 1) % edgesCount;
-            const next = edges[edgeIndices[nextIdx]];
-            const prev = edges[edgeIndices[prevIdx]];
+            const dx = curr[2] - curr[0];
+            const dy = curr[3] - curr[1];
+            const dist = dx * dx + dy * dy;
+            sortedEdges.push([i, dist]);
+        }
+        // Sort edges from short to long.
+        // Reemove shorter edges at first.
+        sortedEdges.sort((a, b) => a[1] - b[1]);
 
-            if (i === prevIdx) {
+        for (let i = 0; i < edgesCount; i++) {
+            const edgeInfo = sortedEdges[i];
+            const idx = edgeInfo[0];
+            const curr = edges[edgeIndices[idx]];
+            let nextIdx = idx;
+            let prevIdx = idx;
+            do {
+                nextIdx = (nextIdx + 1) % edgesCount;
+            } while (edges[edgeIndices[nextIdx]] == null && nextIdx !== idx);
+            do {
+                prevIdx = prevIdx - 1;
+                if (prevIdx < 0) {
+                    prevIdx = edgesCount - 1;
+                }
+            } while (edges[edgeIndices[prevIdx]] == null && prevIdx !== idx);
+
+            if (prevIdx === idx || nextIdx === idx || prevIdx === nextIdx) {
                 break;
             }
+
+            const next = edges[edgeIndices[nextIdx]];
+            const prev = edges[edgeIndices[prevIdx]];
 
             lineIntersection(
                 prev[0], prev[1], prev[2], prev[3],
@@ -124,14 +155,14 @@ function innerOffsetContour(
             p3[1] = curr[3];
 
             // Always keep first and last edge if not close
-            if (!close && (i === 0 || i === edgesCount - 1)) {
+            if (!close && (idx === 0 || idx === edgesCount - 1)) {
                 if (i === 0) {
                     // Keep the start point.
-                    newEdges[edgeIndices[i]] = [p0[0], p0[1], p2[0], p2[1]];
+                    edges[edgeIndices[idx]] = [p0[0], p0[1], p2[0], p2[1]];
                 }
                 else {
                     // Keep the end point.
-                    newEdges[edgeIndices[i]] = [p1[0], p1[1], p3[0], p3[1]];
+                    edges[edgeIndices[idx]] = [p1[0], p1[1], p3[0], p3[1]];
                 }
             }
             else {
@@ -141,29 +172,27 @@ function innerOffsetContour(
 
                 if (
                     // On same side
-                    t0 >= 1 && t1 <= 0
-                    || t0 <=0 && t1 >= 1
+                    t0 > 1 && t1 < 0
+                    || t0 < 0 && t1 > 1
                     // Crossed
-                    || t0 + t1 >= 1
+                    || t0 + t1 > 1
                 ) {
                     hasRemoved = true;
-                    newEdges[edgeIndices[i]] = null;
+                    edges[edgeIndices[idx]] = null;
                     // Empty edge.
                     continue;
                 }
 
-                // updates for edges only to be performed after the loop as original values still being used
-                // https://github.com/WebSVG/voronoi/blob/8893768e3929ea713a47dba2c4d273b775e0bd82/src/voronoi_diag.js#L256
-                newEdges[edgeIndices[i]] = [p1[0], p1[1], p2[0], p2[1]];
+                edges[edgeIndices[idx]] = [p1[0], p1[1], p2[0], p2[1]];
             }
-
-            newEdgeIndices.push(edgeIndices[i]);
-            prevIdx = i;
         }
 
-        edgeIndices = newEdgeIndices;
-        edgesCount = edgeIndices.length;
-        edges = newEdges;
+        edgeIndices = [];
+        for (let i = 0; i < edges.length; i++) {
+            if (edges[i]) {
+                edgeIndices.push(i);
+            }
+        };
     }
 
     do {
@@ -176,7 +205,7 @@ function innerOffsetContour(
     if (close) {
         do {
             prevEdge = edges[idx--];
-        } while (!prevEdge)
+        } while (!prevEdge && idx >= 0)
 
         if (!prevEdge) {
             // Degenerate
@@ -195,8 +224,10 @@ function innerOffsetContour(
     const pt4 = [];
     const v = [];
     const v2 = [];
+
     for (let i = 0; i < edges.length; i++) {
         const edge = edges[i] || prevEdge;
+        const isEnd = edge === prevEdge ? 2 : 0;
 
         needsIndicesMap && (indicesMap[i] = writeIdx);
 
@@ -252,21 +283,21 @@ function innerOffsetContour(
                         writeIdx++;
                     }
                     else {
-                        out[writeIdx * 2] = edge[0];
-                        out[writeIdx * 2 + 1] = edge[1];
+                        out[writeIdx * 2] = edge[isEnd];
+                        out[writeIdx * 2 + 1] = edge[isEnd + 1];
                         writeIdx++;
                     }
                 }
             }
             else {
-                out[writeIdx * 2] = edge[0];
-                out[writeIdx * 2 + 1] = edge[1];
+                out[writeIdx * 2] = edge[isEnd];
+                out[writeIdx * 2 + 1] = edge[isEnd + 1];
                 writeIdx++;
             }
         }
         else {
-            out[writeIdx * 2] = edge[0];
-            out[writeIdx * 2 + 1] = edge[1];
+            out[writeIdx * 2] = edge[isEnd];
+            out[writeIdx * 2 + 1] = edge[isEnd + 1];
             writeIdx++;
         }
 
@@ -281,6 +312,17 @@ function innerOffsetContour(
 
         needsIndicesMap && (indicesMap[len] = writeIdx);
     }
+
+    // if (typeof ctx !== 'undefined') {
+    //     offsetedEdges.forEach((edge, idx) => {
+    //         ctx.beginPath();
+    //         ctx.strokeStyle = '#0f0';
+    //         ctx.globalAlpha = idx / 100 + 0.1;
+    //         ctx.moveTo(edge[0], edge[1]);
+    //         ctx.lineTo(edge[2], edge[3]);
+    //         ctx.stroke();
+    //     })
+    // }
 
     return indicesMap;
 }
@@ -733,17 +775,15 @@ function innerExtrudeTriangulatedPolygon(preparedData, opts) {
         const bevelSize = Math.min(depth / 2, opts.bevelSize);
         const bevelSegments = !(bevelSize > 0) ? 0 : opts.bevelSegments;
 
-        holes = holes || [];
-
         indexCount += indices.length * (opts.excludeBottom ? 1 : 2);
         vertexCount += topVertices.length / 2 * (opts.excludeBottom ? 1 : 2);
         const ringCount = 2 + bevelSegments * 2;
 
         let start = 0;
         let end = 0;
-        for (let h = 0; h < holes.length + 1; h++) {
+        for (let h = 0; h < (holes ? holes.length : 0) + 1; h++) {
             if (h === 0) {
-                end = holes.length ? holes[0] : vertices.length / 2;
+                end = (holes && holes.length) ? holes[0] : vertices.length / 2;
             }
             else {
                 start = holes[h - 1];
