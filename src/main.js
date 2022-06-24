@@ -231,6 +231,13 @@ function convertToClockwise(vertices, holes) {
 function normalizeOpts(opts) {
 
     opts.depth = opts.depth || 1;
+
+    // Explicitly only support positive depth
+    if (opts.depth < 0) {
+        console.warn('Only positive depth supported: ' + opts.depth + ' becomes ' + (-opts.depth));
+        opts.depth = -opts.depth;
+    }
+
     opts.bevelSize = opts.bevelSize || 0;
     opts.bevelSegments = opts.bevelSegments == null ? 2 : opts.bevelSegments;
     opts.smoothBevel = opts.smoothBevel || false;
