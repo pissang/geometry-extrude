@@ -1500,7 +1500,7 @@
 
         var _end = _holes && _holes.length ? _holes[0] : _vertexCount;
 
-        console.log(_start, _end); // Add exterior
+        // Add exterior
 
         addExtrudeSide(data, preparedData[_d], _start, _end, cursors, opts); // Add holes
 
