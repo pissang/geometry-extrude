@@ -62,20 +62,23 @@ type GeoJSON = {
 interface GeometryExtrudeStatic {
 
     extrudePolygon(polygons: ArrayLike<Polygon>, opts: BasicExtrudeOpt & {
-        depth?: ((idx: number) => number) | number
+        depth: ((idx: number) => number) | number
     }): ExtrudeResult
 
     extrudePolyline(polylines: ArrayLike<Polyline>, opts: BasicExtrudeOpt & {
-        depth?: ((idx: number) => number) | number
+        depth: ((idx: number) => number) | number
         lineWidth?: number
         miterLimit?: number
     }): ExtrudeResult
 
-    extrudeGeoJSON(geojson: GeoJSON, opts: BasicExtrudeOpt & {
-        depth?: ((feature: GeoJSONFeature) => number) | number
-        lineWidth?: number
-        miterLimit?: number
-    }): {polygon: ExtrudeResult, polyline: ExtrudeResult}
+    extrudeGeoJSON(
+        geojson: GeoJSON | GeoJSONPolygonGeometry | GeoJSONLineStringGeometry | GeoJSONMultiLineStringGeometry | GeoJSONMultiPolygonGeometry,
+        opts: BasicExtrudeOpt & {
+            depth: ((feature: GeoJSONFeature) => number) | number
+            lineWidth?: number
+            miterLimit?: number
+        }
+    ): {polygon: ExtrudeResult, polyline: ExtrudeResult}
 }
 
 declare const exports: GeometryExtrudeStatic;

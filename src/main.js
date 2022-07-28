@@ -363,14 +363,12 @@ function addExtrudeSide(
     const vertexOffset = cursors.vertex;
     const size = Math.max(rect.width, rect.height, depth);
 
-    function isDuplicateVertex(idx) {
-        const nextIdx = (idx + 1) % ringVertexCount;
-        const x0 = vertices[idx * 2];
-        const y0 = vertices[idx * 2 + 1];
-        const x1 = vertices[nextIdx * 2];
-        const y1 = vertices[nextIdx * 2 + 1];
-        return x0 === x1 && y0 === y1;
-    }
+    const isDuplicateVertex = splittedMap
+        ? (idx) => {
+            const nextIdx = (idx + 1) % ringVertexCount;
+            return splittedMap[idx + start] === splittedMap[nextIdx + start];
+        }
+        : (idx) => false;
 
     // Side vertices
     if (bevelSize > 0) {
@@ -437,7 +435,6 @@ function addExtrudeSide(
                     prevX = x;
                     prevY = y;
                     cursors.vertex++;
-
                     // Just ignore this face if vertex are duplicted in `splitVertices`
                     if (isDuplicateVertex(i)) {
                         continue;
@@ -457,22 +454,24 @@ function addExtrudeSide(
     }
     else {
         for (let k = 0; k < 2; k++) {
-            const z = k === 0 ? depth - bevelSize : bevelSize;
+            const z = k === 0 ? depth : 0;
             let uLen = 0;
             let prevX;
             let prevY;
             for (let i = 0; i < ringVertexCount; i++) {
-                const idx = (i % ringVertexCount + start) * 2;
+                const idx = (i + start) * 2;
                 const x = vertices[idx];
                 const y = vertices[idx + 1];
-                out.position[cursors.vertex * 3] = x;
-                out.position[cursors.vertex * 3 + 1] = y;
-                out.position[cursors.vertex * 3 + 2] = z;
+                const vtx3 = cursors.vertex * 3;
+                const vtx2 = cursors.vertex * 2;
+                out.position[vtx3] = x;
+                out.position[vtx3 + 1] = y;
+                out.position[vtx3 + 2] = z;
                 if (i > 0) {
                     uLen += Math.sqrt((prevX - x) * (prevX - x) + (prevY - y) * (prevY - y));
                 }
-                out.uv[cursors.vertex * 2] = uLen / size;
-                out.uv[cursors.vertex * 2 + 1] = z / size;
+                out.uv[vtx2] = uLen / size;
+                out.uv[vtx2 + 1] = z / size;
                 prevX = x;
                 prevY = y;
 
@@ -512,12 +511,14 @@ function addTopAndBottom({indices, topVertices, rect, depth}, out, cursors, opts
         for (let i = 0; i < topVertices.length; i += 2) {
             const x = topVertices[i];
             const y = topVertices[i + 1];
-            out.position[cursors.vertex * 3] = x;
-            out.position[cursors.vertex * 3 + 1] = y;
-            out.position[cursors.vertex * 3 + 2] = (1 - k) * depth;
+            const vtx3 = cursors.vertex * 3;
+            const vtx2 = cursors.vertex * 2;
+            out.position[vtx3] = x;
+            out.position[vtx3 + 1] = y;
+            out.position[vtx3 + 2] = (1 - k) * depth;
 
-            out.uv[cursors.vertex * 2] = (x - rect.x) / size;
-            out.uv[cursors.vertex * 2 + 1] = (y - rect.y) / size;
+            out.uv[vtx2] = (x - rect.x) / size;
+            out.uv[vtx2 + 1] = (y - rect.y) / size;
             cursors.vertex++;
         }
     }
@@ -616,7 +617,7 @@ function innerExtrudeTriangulatedPolygon(preparedData, opts) {
     let vertexCount = 0;
 
     for (let p = 0; p < preparedData.length; p++) {
-        const {indices, vertices, splittedMap, topVertices, holes, depth} = preparedData[p];
+        let {indices, vertices, splittedMap, topVertices, holes, depth} = preparedData[p];
         const bevelSize = Math.min(depth / 2, opts.bevelSize);
         const bevelSegments = !(bevelSize > 0) ? 0 : opts.bevelSegments;
 
@@ -668,7 +669,6 @@ function innerExtrudeTriangulatedPolygon(preparedData, opts) {
 
         let start = 0;
         let end = (holes && holes.length) ? holes[0] : vertexCount;
-        console.log(start, end);
         // Add exterior
         addExtrudeSide(data, preparedData[d], start, end, cursors, opts);
         // Add holes
@@ -986,7 +986,7 @@ function updateBoundingRect(points, min, max) {
  *
  * @param {Object} geojson
  * @param {Object} [opts]
- * @param {number} [opts.depth]
+ * @param {number} opts.depth
  * @param {number} [opts.bevelSize = 0]
  * @param {number} [opts.bevelSegments = 2]
  * @param {number} [opts.simplify = 0]
@@ -1016,6 +1016,14 @@ export function extrudeGeoJSON(geojson, opts) {
 
     const min = [Infinity, Infinity];
     const max = [-Infinity, -Infinity];
+
+    if (geojson.type === 'LineString' || geojson.type === 'MultiLineString' || geojson.type === 'Polygon' || geojson.type === 'MultiPolygon') {
+        geojson = {
+            features: [{
+                geometry: geojson
+            }]
+        }
+    }
 
     for (let i = 0; i < geojson.features.length; i++) {
         const feature = geojson.features[i];

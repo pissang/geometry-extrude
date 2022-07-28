@@ -18,7 +18,7 @@
             outerNode = linkedList(data, 0, outerLen, dim, true),
             triangles = [];
 
-        if (!outerNode) return triangles;
+        if (!outerNode || outerNode.next === outerNode.prev) return triangles;
 
         var minX, minY, maxX, maxY, x, y, invSize;
 
@@ -113,7 +113,7 @@
 
                 removeNode(ear);
 
-                // skipping the next vertice leads to less sliver triangles
+                // skipping the next vertex leads to less sliver triangles
                 ear = next.next;
                 stop = next.next;
 
@@ -130,7 +130,7 @@
 
                 // if this didn't work, try curing all small self-intersections locally
                 } else if (pass === 1) {
-                    ear = cureLocalIntersections(ear, triangles, dim);
+                    ear = cureLocalIntersections(filterPoints(ear), triangles, dim);
                     earcutLinked(ear, triangles, dim, minX, minY, invSize, 2);
 
                 // as a last resort, try splitting the remaining polygon into two
@@ -237,7 +237,7 @@
             p = p.next;
         } while (p !== start);
 
-        return p;
+        return filterPoints(p);
     }
 
     // try splitting polygon into two and triangulate them independently
@@ -283,7 +283,7 @@
 
         // process holes from left to right
         for (i = 0; i < queue.length; i++) {
-            eliminateHole(queue[i], outerNode);
+            outerNode = eliminateHole(queue[i], outerNode);
             outerNode = filterPoints(outerNode, outerNode.next);
         }
 
@@ -296,11 +296,19 @@
 
     // find a bridge between vertices that connects hole with an outer ring and and link it
     function eliminateHole(hole, outerNode) {
-        outerNode = findHoleBridge(hole, outerNode);
-        if (outerNode) {
-            var b = splitPolygon(outerNode, hole);
-            filterPoints(b, b.next);
+        var bridge = findHoleBridge(hole, outerNode);
+        if (!bridge) {
+            return outerNode;
         }
+
+        var bridgeReverse = splitPolygon(bridge, hole);
+
+        // filter collinear points around the cuts
+        var filteredBridge = filterPoints(bridge, bridge.next);
+        filterPoints(bridgeReverse, bridgeReverse.next);
+
+        // Check if input node was removed by the filtering
+        return outerNode === bridge ? filteredBridge : outerNode;
     }
 
     // David Eberly's algorithm for finding a bridge between hole and outer polygon
@@ -330,7 +338,7 @@
 
         if (!m) return null;
 
-        if (hx === qx) return m.prev; // hole touches outer segment; pick lower endpoint
+        if (hx === qx) return m; // hole touches outer segment; pick leftmost endpoint
 
         // look for points inside the triangle of hole point, segment intersection and endpoint;
         // if there are no points found, we have a valid connection;
@@ -342,24 +350,30 @@
             tanMin = Infinity,
             tan;
 
-        p = m.next;
+        p = m;
 
-        while (p !== stop) {
+        do {
             if (hx >= p.x && p.x >= mx && hx !== p.x &&
                     pointInTriangle(hy < my ? hx : qx, hy, mx, my, hy < my ? qx : hx, hy, p.x, p.y)) {
 
                 tan = Math.abs(hy - p.y) / (hx - p.x); // tangential
 
-                if ((tan < tanMin || (tan === tanMin && p.x > m.x)) && locallyInside(p, hole)) {
+                if (locallyInside(p, hole) &&
+                    (tan < tanMin || (tan === tanMin && (p.x > m.x || (p.x === m.x && sectorContainsSector(m, p)))))) {
                     m = p;
                     tanMin = tan;
                 }
             }
 
             p = p.next;
-        }
+        } while (p !== stop);
 
         return m;
+    }
+
+    // whether sector in vertex m contains sector in vertex p in the same coordinates
+    function sectorContainsSector(m, p) {
+        return area$1(m.prev, m, p.prev) < 0 && area$1(p.next, m, m.next) < 0;
     }
 
     // interlink polygon nodes in z-order
@@ -455,7 +469,7 @@
         var p = start,
             leftmost = start;
         do {
-            if (p.x < leftmost.x) leftmost = p;
+            if (p.x < leftmost.x || (p.x === leftmost.x && p.y < leftmost.y)) leftmost = p;
             p = p.next;
         } while (p !== start);
 
@@ -471,8 +485,10 @@
 
     // check if a diagonal between two polygon nodes is valid (lies in polygon interior)
     function isValidDiagonal(a, b) {
-        return a.next.i !== b.i && a.prev.i !== b.i && !intersectsPolygon(a, b) &&
-               locallyInside(a, b) && locallyInside(b, a) && middleInside(a, b);
+        return a.next.i !== b.i && a.prev.i !== b.i && !intersectsPolygon(a, b) && // dones't intersect other edges
+               (locallyInside(a, b) && locallyInside(b, a) && middleInside(a, b) && // locally visible
+                (area$1(a.prev, a, b.prev) || area$1(a, b.prev, b)) || // does not create opposite-facing sectors
+                equals(a, b) && area$1(a.prev, a, a.next) > 0 && area$1(b.prev, b, b.next) > 0); // special zero-length case
     }
 
     // signed area of a triangle
@@ -487,10 +503,28 @@
 
     // check if two segments intersect
     function intersects(p1, q1, p2, q2) {
-        if ((equals(p1, q1) && equals(p2, q2)) ||
-            (equals(p1, q2) && equals(p2, q1))) return true;
-        return area$1(p1, q1, p2) > 0 !== area$1(p1, q1, q2) > 0 &&
-               area$1(p2, q2, p1) > 0 !== area$1(p2, q2, q1) > 0;
+        var o1 = sign(area$1(p1, q1, p2));
+        var o2 = sign(area$1(p1, q1, q2));
+        var o3 = sign(area$1(p2, q2, p1));
+        var o4 = sign(area$1(p2, q2, q1));
+
+        if (o1 !== o2 && o3 !== o4) return true; // general case
+
+        if (o1 === 0 && onSegment(p1, p2, q1)) return true; // p1, q1 and p2 are collinear and p2 lies on p1q1
+        if (o2 === 0 && onSegment(p1, q2, q1)) return true; // p1, q1 and q2 are collinear and q2 lies on p1q1
+        if (o3 === 0 && onSegment(p2, p1, q2)) return true; // p2, q2 and p1 are collinear and p1 lies on p2q2
+        if (o4 === 0 && onSegment(p2, q1, q2)) return true; // p2, q2 and q1 are collinear and q1 lies on p2q2
+
+        return false;
+    }
+
+    // for collinear points p, q, r, check if point q lies on segment pr
+    function onSegment(p, q, r) {
+        return q.x <= Math.max(p.x, r.x) && q.x >= Math.min(p.x, r.x) && q.y <= Math.max(p.y, r.y) && q.y >= Math.min(p.y, r.y);
+    }
+
+    function sign(num) {
+        return num > 0 ? 1 : num < 0 ? -1 : 0;
     }
 
     // check if a polygon diagonal intersects any polygon segments
@@ -577,14 +611,14 @@
     }
 
     function Node(i, x, y) {
-        // vertice index in coordinates array
+        // vertex index in coordinates array
         this.i = i;
 
         // vertex coordinates
         this.x = x;
         this.y = y;
 
-        // previous and next vertice nodes in a polygon ring
+        // previous and next vertex nodes in a polygon ring
         this.prev = null;
         this.next = null;
 
@@ -1180,16 +1214,12 @@
       var bevelSegments = opts.bevelSegments;
       var vertexOffset = cursors.vertex;
       var size = Math.max(rect.width, rect.height, depth);
-
-      function isDuplicateVertex(idx) {
+      var isDuplicateVertex = splittedMap ? function (idx) {
         var nextIdx = (idx + 1) % ringVertexCount;
-        var x0 = vertices[idx * 2];
-        var y0 = vertices[idx * 2 + 1];
-        var x1 = vertices[nextIdx * 2];
-        var y1 = vertices[nextIdx * 2 + 1];
-        return x0 === x1 && y0 === y1;
-      } // Side vertices
-
+        return splittedMap[idx + start] === splittedMap[nextIdx + start];
+      } : function (idx) {
+        return false;
+      }; // Side vertices
 
       if (bevelSize > 0) {
         var v0 = [0, 0, 1];
@@ -1266,7 +1296,7 @@
         }
       } else {
         for (var _k = 0; _k < 2; _k++) {
-          var _z = _k === 0 ? depth - bevelSize : bevelSize;
+          var _z = _k === 0 ? depth : 0;
 
           var _uLen = 0;
 
@@ -1275,20 +1305,22 @@
           var _prevY = void 0;
 
           for (var _i2 = 0; _i2 < ringVertexCount; _i2++) {
-            var _idx = (_i2 % ringVertexCount + start) * 2;
+            var _idx = (_i2 + start) * 2;
 
             var _x = vertices[_idx];
             var _y = vertices[_idx + 1];
-            out.position[cursors.vertex * 3] = _x;
-            out.position[cursors.vertex * 3 + 1] = _y;
-            out.position[cursors.vertex * 3 + 2] = _z;
+            var vtx3 = cursors.vertex * 3;
+            var vtx2 = cursors.vertex * 2;
+            out.position[vtx3] = _x;
+            out.position[vtx3 + 1] = _y;
+            out.position[vtx3 + 2] = _z;
 
             if (_i2 > 0) {
               _uLen += Math.sqrt((_prevX - _x) * (_prevX - _x) + (_prevY - _y) * (_prevY - _y));
             }
 
-            out.uv[cursors.vertex * 2] = _uLen / size;
-            out.uv[cursors.vertex * 2 + 1] = _z / size;
+            out.uv[vtx2] = _uLen / size;
+            out.uv[vtx2 + 1] = _z / size;
             _prevX = _x;
             _prevY = _y;
             cursors.vertex++;
@@ -1339,11 +1371,13 @@
         for (var _i4 = 0; _i4 < topVertices.length; _i4 += 2) {
           var x = topVertices[_i4];
           var y = topVertices[_i4 + 1];
-          out.position[cursors.vertex * 3] = x;
-          out.position[cursors.vertex * 3 + 1] = y;
-          out.position[cursors.vertex * 3 + 2] = (1 - k) * depth;
-          out.uv[cursors.vertex * 2] = (x - rect.x) / size;
-          out.uv[cursors.vertex * 2 + 1] = (y - rect.y) / size;
+          var vtx3 = cursors.vertex * 3;
+          var vtx2 = cursors.vertex * 2;
+          out.position[vtx3] = x;
+          out.position[vtx3 + 1] = y;
+          out.position[vtx3 + 2] = (1 - k) * depth;
+          out.uv[vtx2] = (x - rect.x) / size;
+          out.uv[vtx2 + 1] = (y - rect.y) / size;
           cursors.vertex++;
         }
       } // Bottom indices
@@ -1498,7 +1532,7 @@
 
         var _start = 0;
 
-        var _end = _holes && _holes.length ? _holes[0] : _vertexCount;
+        var _end = _holes && _holes.length ? _holes[0] : _vertexCount; // Add exterior
 
         // Add exterior
 
@@ -1831,7 +1865,7 @@
      *
      * @param {Object} geojson
      * @param {Object} [opts]
-     * @param {number} [opts.depth]
+     * @param {number} opts.depth
      * @param {number} [opts.bevelSize = 0]
      * @param {number} [opts.bevelSegments = 2]
      * @param {number} [opts.simplify = 0]
@@ -1858,6 +1892,14 @@
       var polygonFeatureIndices = [];
       var min = [Infinity, Infinity];
       var max = [-Infinity, -Infinity];
+
+      if (geojson.type === 'LineString' || geojson.type === 'MultiLineString' || geojson.type === 'Polygon' || geojson.type === 'MultiPolygon') {
+        geojson = {
+          features: [{
+            geometry: geojson
+          }]
+        };
+      }
 
       for (var i = 0; i < geojson.features.length; i++) {
         var feature = geojson.features[i];
