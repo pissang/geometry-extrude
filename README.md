@@ -50,8 +50,8 @@ geometry.indices = indices;
 ```js
 const {indices, position, uv, normal} = extrudePolygon(squareWithHole);
 const geometry = new THREE.BufferGeometry();
-geometry.addAttribute('position', new THREE.Float32BufferAttribute(position, 3));
-geometry.addAttribute('normal', new THREE.Float32BufferAttribute(normal, 3));
+geometry.setAttribute('position', new THREE.Float32BufferAttribute(position, 3));
+geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normal, 3));
 geometry.setIndex(new THREE.Uint16BufferAttribute(indices, 1));
 ```
 
